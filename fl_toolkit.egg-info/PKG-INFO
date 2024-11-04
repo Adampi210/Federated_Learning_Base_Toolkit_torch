@@ -1,0 +1,19 @@
+Metadata-Version: 2.1
+Name: fl_toolkit
+Version: 0.1.0
+Summary: Basic toolkit for Federated Learning Research
+Home-page: https://github.com/Adampi210/Federated_Learning_Base_Toolkit_torch.git
+Author: Adam Piaseczny
+Author-email: apiasecz@purdue.edu
+Keywords: federated-learning,distributed-deep-learning,distributed-machine-learning
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Science/Research
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: torch>=2.0.0
+Requires-Dist: numpy>=1.20.0
+
+# Federated-Learning-Base-Toolkit-torch
