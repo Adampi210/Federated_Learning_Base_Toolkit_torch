@@ -8,20 +8,23 @@ class FederatedClient():
         self.client_id = client_id
         self.device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = BaseNeuralNetwork(model_architecture, device=self.device)
-        self.data_loader = None 
+        self.train_loader = None 
+        self.test_loader = None
         
-    def set_data(self, data_loader):
-        self.data_loader = data_loader
+    def set_data(self, train_loader, test_loader=None):
+        self.train_loader = train_loader
+        if test_loader is not None:
+            self.test_loader = test_loader
         
     def train(self, epochs, optimizer, loss_fn, verbose=False):
-        if self.data_loader is None:
-            raise ValueError("Data loader is not set. Use set_data() method to set the data loader")
-        self.model.train(self.data_loader, optimizer, loss_fn, epochs, verbose)
+        if self.train_loader is None:
+            raise ValueError("Train loader is not set. Use set_data() method to set the train loader")
+        self.model.train(self.train_loader, optimizer, loss_fn, epochs, verbose)
     
     def evaluate(self, metric_fn, verbose=False):
-        if self.data_loader is None:
-            raise ValueError("Data loader is not set. Use set_data() method to set the data loader")
-        return self.model.evaluate(self.data_loader, metric_fn, verbose)
+        if self.test_loader is None:
+            raise ValueError("Test loader is not set. Use set_data() method to set the test loader")
+        return self.model.evaluate(self.test_loader, metric_fn, verbose)
 
     def get_model_params(self):
         return self.model.get_params()
