@@ -8,7 +8,7 @@ from torch.utils.data import Dataset, DataLoader, TensorDataset
 from typing import Optional, Callable, Union, List, Tuple, Any
 from abc import ABC, abstractmethod
 
-from data_splitter import *
+from .data_splitter import iid_split, non_iid_split
 
 # Works with any type of data
 class BaseDataHandler():

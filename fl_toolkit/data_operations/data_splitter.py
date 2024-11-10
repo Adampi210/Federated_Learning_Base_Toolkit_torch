@@ -78,4 +78,3 @@ def non_iid_split(dataset, num_clients, strategy='non_iid_default', **kwargs):
         return _non_iid_default_split(dataset, num_clients, kwargs['num_classes_per_client'])
     else:
         raise ValueError(f"Unknown non-IID strategy: {strategy}")
-
