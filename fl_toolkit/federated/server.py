@@ -26,25 +26,7 @@ class FederatedServer():
         global_params = self.global_model.get_params()
         for client in self.clients.values():
             client.set_model_params(global_params)
-    '''     
-    def aggregate_models_FedAVG(self, client_weights=None):
-        if not self.clients:
-            raise ValueError("No clients available for aggregation")
-        
-        if client_weights is None:
-            client_weights = {client_id: 1 / len(self.clients) for client_id in self.clients}
-        
-        global_params = self.global_model.get_params()
-        
-        for name, param in global_params.items():
-            weighted_sum = torch.zeros_like(param)
-            for client_id, weight in client_weights.items():
-                client_params = self.clients[client_id].get_model_params()
-                weighted_sum += weight * client_params[name]
-            global_params[name] = weighted_sum
-        
-        self.global_model.set_params(global_params)
-    '''
+
     def aggregate_models_FedAVG(self, client_weights=None):
         if not self.clients:
             raise ValueError("No clients available for aggregation")

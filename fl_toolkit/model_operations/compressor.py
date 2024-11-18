@@ -78,7 +78,7 @@ class RandomProjectionCompressor(BaseCompressor):
             else:
                 rec_projection = projection
                 
-            # reconstruct
+            # Reconstruct
             param = torch.mm(compressed, rec_projection.t())
             
             # Reshape if needed
@@ -94,3 +94,70 @@ class RandomProjectionCompressor(BaseCompressor):
             original_params, compressed_params, reconstructed_params,
             compression_rate, tolerance)
         
+# Uses SVD to compress parameter size
+class SVDLiteCompressor(BaseCompressor):
+    def compress(self, params, compression_rate):
+        compressed = {}
+        metadata = {'U': {}, 'S': {}, 'V': {}, 'shapes': {}}
+        
+        for name, param in param.items():
+            orig_shape = param.shape
+            metadata['shapes'][name] = orig_shape
+
+            # Reshape to 2D if needed
+            if len(orig_shape) > 2:
+                    param_2d = param.reshape(orig_shape[0], -1)
+            else:
+                param_2d = param
+                
+            # SVD
+            U, S, V = torch.svd(param_2d)
+            
+            rank = max(1, int(min(param_2d.shape) * compression_rate))
+            
+            metadata['U'][name] = U[:, :rank]
+            metadata['S'][name] = S[:rank]
+            metadata['V'][name] = V[:, :rank]
+
+            compressed[name] = torch.mm(U[:, :rank] * S[:rank], V[:, :rank].t())
+            
+            if len(orig_shape) > 2:
+                compressed[name] = compressed[name].reshape(orig_shape)
+        
+        return compressed, metadata
+    
+    def decompress(self, compressed_params, metadata, target_scale=None):
+        decompressed = {}
+        
+        for name, _ in compressed_params.items():
+            orig_shape = metadata['shapes'][name]
+            U = metadata['U'][name]
+            S = metadata['S'][name]
+            V = metadata['V'][name]
+            
+            if target_scale is not None:
+                S = S * target_scale
+                
+            param = torch.mm(U * S, V.t())
+            
+            if len(orig_shape) > 2:
+                param = param.reshape(orig_shape)
+                
+            decompressed[name] = param
+            
+        return decompressed
+    
+    def validate_compression(self, original_params, compressed_params, 
+                             reconstructed_params, compression_rate, tolerance=1e-5):
+        validation = super().validate_compression(
+            original_params, compressed_params, reconstructed_params,
+            compression_rate, tolerance)
+        validation['singular_values_kept'] = {}
+        
+        for name in original_params:
+            _, S, _ = torch.svd(original_params[name].reshape(original_params[name].shape[0], -1))
+            validation['singular_values_kept'][name] = len(self.metadata['S'][name]) / len(S)
+        return validation
+        
+class DCTCompressor(BaseCompressor):
+    pass
