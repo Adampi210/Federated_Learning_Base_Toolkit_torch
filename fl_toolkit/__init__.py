@@ -15,6 +15,13 @@ from .federated import (
     FederatedServer
 )
 
+# Import from model operations
+from .model_operations import (
+    RandomProjectionCompressor, 
+    SVDLiteCompressor, 
+    DCTCompressor
+)
+
 # Import from models
 from .models import (
     BaseModelArchitecture,
@@ -29,7 +36,6 @@ from .utils import (
     f1_score_fn,
 )
 
-# If you want to use "from fl_toolkit import *", you need to specify what should be imported
 __all__ = [
     # Data operations
     'BaseDataHandler',
@@ -45,6 +51,11 @@ __all__ = [
     # Models
     'BaseModelArchitecture',
     'BaseNeuralNetwork',
+    
+    # Model Operations
+    'RandomProjectionCompressor',
+    'SVDLiteCompressor',
+    'DCTCompressor',
     
     # Utils
     'accuracy_fn',
