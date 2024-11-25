@@ -96,7 +96,7 @@ if __name__ == "__main__":
     data.load_data('~/data/MNIST/')
     
     # Test each model architecture
-    for model_name, model_arch in model_configs[1:]:
+    for model_name, model_arch in model_configs:
         
         print(f"\nTesting {model_name}")
         print("=" * 50)
