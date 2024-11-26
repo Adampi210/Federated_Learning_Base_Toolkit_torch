@@ -50,7 +50,7 @@ class BaseNeuralNetwork():
             for inputs, targets in data_loader:
                 inputs, targets = inputs.to(self.device), targets.to(self.device)
                 outputs = self.model(inputs)
-                total_metric += metric_fn(targets, outputs).item()
+                total_metric += metric_fn(outputs, targets).item()
         avg_metric = total_metric / len(data_loader)
         if verbose:
             print(f"Evaluation metric: {avg_metric:.4f}")

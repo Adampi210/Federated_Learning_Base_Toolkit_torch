@@ -3,12 +3,12 @@ import torch
 from fl_toolkit import *
 
 # Calculate accuracy for prediction
-def accuracy_fn(targets, outputs):
+def accuracy_fn(outputs, targets):
     predictions = outputs.argmax(dim=1)
     return (predictions == targets).float().mean()
 
 # Calculate the precision for multi-class classification
-def precision_fn(targets, outputs):
+def precision_fn(outputs, targets):
     predictions = outputs.argmax(dim=1)
     num_classes = outputs.shape[1]
     device = outputs.device
@@ -26,7 +26,7 @@ def precision_fn(targets, outputs):
     return torch.zeros(1, device=device)
 
 # Calculate recall for multi-class classification
-def recall_fn(targets, outputs):
+def recall_fn(outputs, targets):
     predictions = outputs.argmax(dim=1)
     num_classes = outputs.shape[1]
     device = outputs.device
@@ -44,7 +44,7 @@ def recall_fn(targets, outputs):
     return torch.zeros(1, device=device)
 
 # Calculate F1 score
-def f1_score_fn(targets, outputs):
+def f1_score_fn(outputs, targets):
     prec = precision_fn(targets, outputs)
     rec = recall_fn(targets, outputs)
     device = outputs.device

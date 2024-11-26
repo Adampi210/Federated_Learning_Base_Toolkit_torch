@@ -85,7 +85,6 @@ class FederatedDriftClient(FederatedClient):
             self.test_loader = DataLoader(
                 drifted_test_dataset,
                 batch_size=self.test_loader.batch_size,
-                shuffle=self.test_loader.shuffle,
                 num_workers=self.test_loader.num_workers,
                 pin_memory=self.test_loader.pin_memory
             )
