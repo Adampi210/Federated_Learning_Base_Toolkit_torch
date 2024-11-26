@@ -6,12 +6,16 @@ from .data_operations import (
     MNISTDataHandler,
     FashionMNISTDataHandler,
     CIFAR10DataHandler,
-    CIFAR100DataHandler
+    CIFAR100DataHandler,
+    DataDrift,
+    ConceptDrift, 
+    DriftedDataset
 )
 
 # Import from federated
 from .federated import (
     FederatedClient,
+    FederatedDriftClient,
     FederatedServer
 )
 
@@ -44,8 +48,14 @@ __all__ = [
     'CIFAR10DataHandler',
     'CIFAR100DataHandler',
     
+    # Drift operations
+    'DataDrift',
+    'ConceptDrift', 
+    'DriftedDataset',
+    
     # Federated
     'FederatedClient',
+    'FederatedDriftClient',
     'FederatedServer',
     
     # Models
