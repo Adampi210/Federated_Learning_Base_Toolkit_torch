@@ -234,6 +234,7 @@ class SVDLiteCompressor(BaseCompressor):
         
         return validation
 
+# Uses tensor-train decomposition for compression
 class TensorTrainCompressor(BaseCompressor):
     def __init__(self, seed=42):
         self.seed = seed
