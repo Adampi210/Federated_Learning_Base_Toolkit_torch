@@ -122,15 +122,14 @@ class RandomProjectionCompressor(BaseCompressor):
 
 # Uses SVD to compress parameter size
 class SVDLiteCompressor(BaseCompressor):
-    def compress(self, params, compression_rate):
+    def compress(self, params, compression_rate, tolerance=0.01):
         compressed = {}
-        metadata = {'U': {}, 'S': {}, 'V': {}, 'shapes': {}, 'orig_dims': {}}  # Added orig_dims
+        metadata = {'U': {}, 'S': {}, 'V': {}, 'shapes': {}, 'orig_dims': {}}
         
         for name, param in params.items():
             orig_shape = param.shape
             metadata['shapes'][name] = orig_shape
             
-            # Pass through scalar values
             if len(orig_shape) == 0:
                 compressed[name] = param
                 metadata['U'][name] = None
@@ -139,26 +138,42 @@ class SVDLiteCompressor(BaseCompressor):
                 metadata['orig_dims'][name] = None
                 continue
             
-            # Reshape to 2D
             if len(orig_shape) == 1:
                 param_2d = param.reshape(1, -1)
             else:
                 param_2d = param.reshape(orig_shape[0], -1)
                 
-            # Store original dimensions
-            metadata['orig_dims'][name] = param_2d.shape[1]
-                
-            # SVD
-            U, S, V = torch.svd(param_2d)
-            rank = max(1, int(min(param_2d.shape) * compression_rate))
+            metadata['orig_dims'][name] = param_2d.shape
             
-            # Store truncated components
+            U, S, V = torch.svd(param_2d)
+            
+            min_dim = min(param_2d.shape)
+            rank = max(1, int(min_dim * compression_rate))
+            
+            orig_size = param.numel() * param.element_size()
+            left, right = 1, min_dim
+            best_rank = rank
+            best_ratio = float('inf')
+            
+            while left <= right:
+                rank = (left + right) // 2
+                compressed_size = (U[:, :rank].numel() + S[:rank].numel() + V[:, :rank].numel()) * param.element_size()
+                current_ratio = compressed_size / orig_size
+                
+                if abs(current_ratio - compression_rate) < abs(best_ratio - compression_rate):
+                    best_rank = rank
+                    best_ratio = current_ratio
+                    
+                if current_ratio > compression_rate:
+                    right = rank - 1
+                else:
+                    left = rank + 1
+            
+            rank = best_rank
             metadata['U'][name] = U[:, :rank]
             metadata['S'][name] = S[:rank]
             metadata['V'][name] = V[:, :rank]
-            
-            # Store compressed form (just low rank factors)
-            compressed[name] = U[:, :rank] * S[:rank]  # Store U*S as compressed
+            compressed[name] = U[:, :rank] * S[:rank]
             
         return compressed, metadata
     
@@ -168,42 +183,33 @@ class SVDLiteCompressor(BaseCompressor):
         for name, compressed in compressed_params.items():
             orig_shape = metadata['shapes'][name]
             
-            # Pass through scalar values
             if len(orig_shape) == 0:
                 decompressed[name] = compressed
                 continue
             
-            # Get components
             V = metadata['V'][name]
             orig_dim = metadata['orig_dims'][name]
             
             if target_scale is not None:
-                # Calculate new dimensions
                 new_shape = list(orig_shape)
                 if len(orig_shape) >= 2:
                     new_shape[1] = int(orig_shape[1] * target_scale)
                 else:
                     new_shape[0] = int(orig_shape[0] * target_scale)
                 
-                # Scale the original dimension
-                new_dim = int(orig_dim * target_scale)
-                
-                # Create new V matrix with scaled size
-                new_V = torch.randn(new_dim, V.shape[1], device=V.device)
+                new_V_size = int(V.shape[0] * target_scale)
+                new_V = torch.randn(new_V_size, V.shape[1], device=V.device)
                 new_V = new_V / torch.norm(new_V, dim=0, keepdim=True)
-                
-                # Reconstruct with scaled V
                 param = torch.mm(compressed, new_V.t())
             else:
-                # Normal reconstruction
+                new_shape = orig_shape
                 param = torch.mm(compressed, V.t())
             
-            # Reshape to target shape
             param = param.reshape(new_shape)
             decompressed[name] = param
             
         return decompressed
-
+    
     def validate_compression(self, original_params, compressed_params, metadata, 
                            reconstructed_params, compression_rate, tolerance=1e-5):
         validation = super().validate_compression(
@@ -222,118 +228,184 @@ class SVDLiteCompressor(BaseCompressor):
         comp_size = sum(p.numel() * p.element_size() for p in compressed_params.values())
         meta_size = sum(v.numel() * v.element_size() if v is not None else 0 
                        for v in metadata['V'].values())
-        
         actual_rate = (comp_size + meta_size) / orig_size
         validation['compression_ratio'] = actual_rate
         validation['target_ratio_met'] = abs(actual_rate - compression_rate) < tolerance
         
         return validation
-    
-class DCTCompressor(BaseCompressor):
-   def dct2d(self, x):
-       X1 = torch.fft.rfft(x, dim=0, norm='ortho')
-       X2 = torch.fft.rfft(X1.real, dim=1, norm='ortho')
-       return X2
-       
-   def idct2d(self, X):
-       x1 = torch.fft.irfft(X, dim=1, norm='ortho')
-       x2 = torch.fft.irfft(x1, dim=0, norm='ortho')
-       return x2
-   
-   def compress(self, params, compression_rate):
-       compressed = {}
-       metadata = {'shapes': {}, 'frequency_shapes': {}}
-       
-       for name, param in params.items():
-           orig_shape = param.shape
-           metadata['shapes'][name] = orig_shape
-           
-           # Pass through scalar values
-           if len(orig_shape) == 0:
-               compressed[name] = param
-               metadata['frequency_shapes'][name] = None
-               continue
-           
-           # Reshape to 2D
-           if len(orig_shape) == 1:
-               param_2d = param.reshape(1, -1)
-           else:
-               param_2d = param.reshape(orig_shape[0], -1)
-               
-           # Apply DCT
-           freq_coeffs = self.dct2d(param_2d)
-           
-           # Keep top k coefficients based on magnitude
-           k = max(1, int(freq_coeffs.numel() * compression_rate))
-           values, indices = torch.topk(freq_coeffs.abs().flatten(), k)
-           
-           # Create sparse tensor of kept coefficients
-           compressed_coeffs = torch.zeros_like(freq_coeffs.flatten())
-           compressed_coeffs[indices] = freq_coeffs.flatten()[indices]
-           compressed_coeffs = compressed_coeffs.reshape(freq_coeffs.shape)
-           
-           metadata['frequency_shapes'][name] = compressed_coeffs.shape
-           compressed[name] = compressed_coeffs
-           
-       return compressed, metadata
-   
-   def decompress(self, compressed_params, metadata, target_scale=None):
-       decompressed = {}
-       
-       for name, compressed in compressed_params.items():
-           orig_shape = metadata['shapes'][name]
-           
-           # Pass through scalar values
-           if len(orig_shape) == 0:
-               decompressed[name] = compressed
-               continue
-           
-           if target_scale is not None:
-               # Scale the frequency coefficients
-               compressed = compressed * target_scale
-               
-               # Scale the original shape
-               new_shape = list(orig_shape)
-               if len(orig_shape) >= 2:
-                   new_shape[1] = int(orig_shape[1] * target_scale)
-               else:
-                   new_shape[0] = int(orig_shape[0] * target_scale)
-           else:
-               new_shape = orig_shape
-           
-           # Inverse DCT
-           param = self.idct2d(compressed)
-           param = param.reshape(new_shape)
-           decompressed[name] = param
-           
-       return decompressed
 
-   def validate_compression(self, original_params, compressed_params, metadata,
-                          reconstructed_params, compression_rate, tolerance=1e-5):
-       validation = super().validate_compression(
-           original_params, compressed_params, reconstructed_params,
-           compression_rate, tolerance)
-       
-       # Add frequency-domain metrics
-       validation['frequency_energy_retention'] = {}
-       for name in original_params:
-           if len(original_params[name].shape) > 0:  # Skip scalar values
-               param_2d = original_params[name].reshape(original_params[name].shape[0], -1)
-               orig_freq = self.dct2d(param_2d)
-               comp_freq = compressed_params[name]
-               validation['frequency_energy_retention'][name] = (
-                   torch.norm(comp_freq) / torch.norm(orig_freq)
-               ).item()
-       
-       # Calculate compression ratio
-       orig_size = sum(p.numel() * p.element_size() for p in original_params.values())
-       comp_size = sum(p.numel() * p.element_size() for p in compressed_params.values())
-       
-       actual_rate = comp_size / orig_size
-       validation['compression_ratio'] = actual_rate
-       validation['target_ratio_met'] = abs(actual_rate - compression_rate) < tolerance
-       
-       return validation
+class TensorTrainCompressor(BaseCompressor):
+    def __init__(self, seed=42):
+        self.seed = seed
+        torch.manual_seed(seed)
+
+    def factorize_dim(self, dim):
+        """Helper function to factorize dimension into roughly equal factors."""
+        factors = []
+        sqrt_dim = int(np.sqrt(dim))
+        for i in range(sqrt_dim, 0, -1):
+            if dim % i == 0:
+                factors = [i, dim // i]
+                break
+        return factors if factors else [1, dim]
+
+    def tt_decomposition(self, tensor, max_rank):
+        """Decompose tensor into TT-format with adaptive ranks."""
+        shape = tensor.shape
+        if len(shape) == 1:
+            return [tensor.reshape(1, -1, 1)]
+        
+        n, m = shape
+        # Factorize the second dimension for better decomposition
+        m1, m2 = self.factorize_dim(m)
+        
+        # Reshape and perform first decomposition
+        tensor = tensor.reshape(n, m1, m2)
+        n1 = n
+        n2 = m1
+        n3 = m2
+        
+        tensor = tensor.reshape(n1, -1)
+        u1, s1, v1 = torch.svd(tensor)
+        r1 = min(max_rank, len(s1))
+        
+        cores = []
+        # First core
+        cores.append(u1[:, :r1].reshape(-1, n1, r1))
+        
+        # Middle transformation
+        temp = torch.mm(torch.diag(s1[:r1]), v1[:, :r1].t())
+        temp = temp.reshape(r1, n2, n3)
+        
+        # Final core
+        cores.append(temp.reshape(-1, n2, n3))
+        
+        return cores
+
+    def tt_reconstruction(self, cores):
+        """Reconstruct tensor from TT-cores."""
+        result = cores[0]
+        for core in cores[1:]:
+            n1, r1, r2 = result.shape
+            result = result.reshape(-1, r2)
+            core_flat = core.reshape(r2, -1)
+            result = torch.mm(result, core_flat)
+        return result.reshape(cores[0].shape[1], -1)
+
+    def compress(self, params, compression_rate, tolerance=0.01):
+        compressed = {}
+        metadata = {'shapes': {}, 'ranks': {}}
+        
+        for name, param in params.items():
+            orig_shape = param.shape
+            metadata['shapes'][name] = orig_shape
+            
+            if len(orig_shape) == 0:
+                compressed[name] = param
+                continue
+            
+            # Reshape to 2D
+            if len(orig_shape) == 1:
+                param_2d = param.reshape(1, -1)
+            else:
+                param_2d = param.reshape(orig_shape[0], -1)
+            
+            orig_size = param.numel() * param.element_size()
+            min_rank = 1
+            max_rank = min(param_2d.shape)
+            best_rank = max(1, int(np.sqrt(param_2d.numel() * compression_rate)))
+            best_ratio = float('inf')
+            
+            # Binary search for the rank that gives desired compression ratio
+            while min_rank <= max_rank:
+                rank = (min_rank + max_rank) // 2
+                
+                # Try decomposition with current rank
+                cores = self.tt_decomposition(param_2d, rank)
+                
+                # Calculate size with current rank
+                compressed_size = sum(core.numel() * core.element_size() for core in cores)
+                current_ratio = compressed_size / orig_size
+                
+                # Update best if closer to target
+                if abs(current_ratio - compression_rate) < abs(best_ratio - compression_rate):
+                    best_rank = rank
+                    best_ratio = current_ratio
+                    best_cores = cores
+                
+                if current_ratio > compression_rate:
+                    max_rank = rank - 1
+                else:
+                    min_rank = rank + 1
+            
+            # Use best found rank
+            compressed[name] = best_cores
+            metadata['ranks'][name] = best_rank
+        
+        return compressed, metadata
+
+    def get_scaling_matrix(self, in_dim, out_dim, device):
+        return torch.randn(in_dim, out_dim, device=device) / np.sqrt(out_dim)
+
+    def decompress(self, compressed_params, metadata, target_scale=None):
+        decompressed = {}
+        
+        for name, cores in compressed_params.items():
+            orig_shape = metadata['shapes'][name]
+            
+            if len(orig_shape) == 0:
+                decompressed[name] = cores
+                continue
+            
+            # Reconstruct
+            param = self.tt_reconstruction(cores)
+            
+            if target_scale is not None:
+                if len(orig_shape) == 1:
+                    new_shape = [int(orig_shape[0] * target_scale)]
+                    scaling_matrix = self.get_scaling_matrix(param.shape[1], new_shape[0], param.device)
+                else:
+                    new_shape = list(orig_shape)
+                    new_shape[1] = int(orig_shape[1] * target_scale)
+                    scaling_matrix = self.get_scaling_matrix(param.shape[1], new_shape[1], param.device)
+                
+                param = torch.mm(param, scaling_matrix)
+            
+            param = param.reshape(new_shape)
+            decompressed[name] = param
+            
+        return decompressed
+
+    def validate_compression(self, original_params, compressed_params, metadata,
+                       reconstructed_params, compression_rate, tolerance=1e-5):
+        validation = super().validate_compression(
+            original_params, compressed_params, reconstructed_params,
+            compression_rate, tolerance)
+        
+        # Calculate original size
+        orig_size = sum(p.numel() * p.element_size() for p in original_params.values())
+        
+        # Calculate compressed size, handling both tensor cores and scalar values
+        comp_size = 0
+        for param in compressed_params.values():
+            if isinstance(param, list):  # List of tensor cores
+                comp_size += sum(core.numel() * core.element_size() for core in param)
+            else:  # Scalar or uncompressed parameter
+                comp_size += param.numel() * param.element_size()
+        
+        # Calculate and store compression metrics
+        actual_rate = comp_size / orig_size
+        validation['compression_ratio'] = actual_rate
+        validation['target_ratio_met'] = abs(actual_rate - compression_rate) < tolerance
+        
+        # Store tensor train specific metrics
+        validation['tt_ranks'] = {
+            name: metadata['ranks'][name] 
+            for name in original_params.keys() 
+            if len(original_params[name].shape) > 0
+        }
+        
+        return validation
 
 if __name__ == "__main__":
     from fl_toolkit import *
@@ -407,7 +479,7 @@ if __name__ == "__main__":
     compression_configs = [
         ("Random Projection", RandomProjectionCompressor()),
         ("SVD Lite", SVDLiteCompressor()),
-        # ("DCT", DCTCompressor())
+        ("Tensor Train", TensorTrainCompressor())
     ]
     
     # Test parameters
@@ -440,23 +512,22 @@ if __name__ == "__main__":
                 
                 # Calculate sizes
                 orig_size = sum(p.numel() * p.element_size() for p in params.values())
-                comp_size = sum(p.numel() * p.element_size() for p in compressed_params.values())
+                comp_size = 0
+                for param in compressed_params.values():
+                    if isinstance(param, list):
+                        comp_size += sum(core.numel() * core.element_size() for core in param)
+                    else:
+                        comp_size += param.numel() * param.element_size()
 
                 print(f"Original size: {orig_size/1024:.2f} KB")
                 print(f"Compressed size: {comp_size/1024:.2f} KB")
-                print(f"Total compressed size: {(comp_size)/1024:.2f} KB")
-                print(f"Actual compression ratio: {(comp_size)/orig_size:.4f}")
-                
-            # Test expansion
-            expanded_params = compressor.decompress(
-                compressed_params, metadata, target_scale=expansion_scale
-            )
-            
-            # Print compression-specific metrics
-            if isinstance(compressor, SVDLiteCompressor):
-                avg_sv_kept = np.mean(list(validation['singular_values_kept'].values()))
-                print(f"Average singular values kept: {avg_sv_kept:.4f}")
-            elif isinstance(compressor, DCTCompressor):
-                avg_energy = np.mean(list(validation['frequency_energy_retention'].values()))
-                print(f"Average frequency energy retained: {avg_energy:.4f}")
-            
+                print(f"Total compressed size: {comp_size/1024:.2f} KB")
+                print(f"Actual compression ratio: {comp_size/orig_size:.4f}")
+
+                # Print compression-specific metrics
+                if isinstance(compressor, SVDLiteCompressor):
+                    avg_sv_kept = np.mean(list(validation['singular_values_kept'].values()))
+                    print(f"Average singular values kept: {avg_sv_kept:.4f}")
+                elif isinstance(compressor, TensorTrainCompressor):
+                    avg_rank = np.mean(list(validation['tt_ranks'].values()))
+                    print(f"Average TT rank: {avg_rank:.4f}")

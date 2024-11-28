@@ -23,7 +23,7 @@ from .federated import (
 from .model_operations import (
     RandomProjectionCompressor, 
     SVDLiteCompressor, 
-    DCTCompressor
+    TensorTrainCompressor
 )
 
 # Import from models
@@ -65,7 +65,7 @@ __all__ = [
     # Model Operations
     'RandomProjectionCompressor',
     'SVDLiteCompressor',
-    'DCTCompressor',
+    'TensorTrainCompressor',
     
     # Utils
     'accuracy_fn',

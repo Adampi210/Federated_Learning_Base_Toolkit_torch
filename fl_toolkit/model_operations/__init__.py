@@ -1,1 +1,1 @@
-from .compressor import RandomProjectionCompressor, SVDLiteCompressor, DCTCompressor
+from .compressor import RandomProjectionCompressor, SVDLiteCompressor, TensorTrainCompressor
