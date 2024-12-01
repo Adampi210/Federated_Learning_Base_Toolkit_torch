@@ -16,14 +16,15 @@ from .data_operations import (
 from .federated import (
     FederatedClient,
     FederatedDriftClient,
-    FederatedServer
+    FederatedCompressedClient,
+    FederatedServer,
+    FederatedCompressedServer
 )
 
 # Import from model operations
 from .model_operations import (
-    RandomProjectionCompressor, 
-    SVDLiteCompressor, 
-    TensorTrainCompressor
+    WeightPruner,
+    SplitModelCompressor
 )
 
 # Import from models
@@ -56,16 +57,17 @@ __all__ = [
     # Federated
     'FederatedClient',
     'FederatedDriftClient',
+    'FederatedCompressedClient',
     'FederatedServer',
+    'FederatedCompressedServer',
     
     # Models
     'BaseModelArchitecture',
     'BaseNeuralNetwork',
     
     # Model Operations
-    'RandomProjectionCompressor',
-    'SVDLiteCompressor',
-    'TensorTrainCompressor',
+    'WeightPruner',
+    'SplitModelCompressor',
     
     # Utils
     'accuracy_fn',

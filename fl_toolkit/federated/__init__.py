@@ -1,2 +1,2 @@
-from .client import FederatedClient, FederatedDriftClient
-from .server import FederatedServer
+from .client import FederatedClient, FederatedDriftClient, FederatedCompressedClient
+from .server import FederatedServer, FederatedCompressedServer

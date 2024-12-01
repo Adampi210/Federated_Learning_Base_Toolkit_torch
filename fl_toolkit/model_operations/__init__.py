@@ -1,1 +1,1 @@
-from .compressor import RandomProjectionCompressor, SVDLiteCompressor, TensorTrainCompressor
+from .compressor import WeightPruner, SplitModelCompressor

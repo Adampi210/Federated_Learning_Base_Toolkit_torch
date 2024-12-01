@@ -98,3 +98,37 @@ class FederatedDriftClient(FederatedClient):
         if concept_drift is not None:
             self.concept_drift = concept_drift
         self.apply_drift()
+        
+class FederatedCompressedClient(FederatedClient):
+    def __init__(self, client_id, model_architecture, compressor=None, device=None):
+        super().__init__(client_id, model_architecture, device)
+        self.compressor = compressor
+        self.current_masks = None
+    
+    def get_model_params(self):
+        params = self.model.get_params()
+        if self.compressor is not None:
+            compressed_params, masks = self.compressor.compress(params)
+            self.current_masks = masks
+            return compressed_params, masks
+        return params, None
+    
+    def set_model_params(self, params):
+        current_params = self.model.get_params()
+        
+        if self.compressor is not None and self.current_masks is not None:
+            updated_params = {}
+            for name, param in current_params.items():
+                if name in self.current_masks:
+                    # Create a mask for where parameters should be updated (mask == 1)
+                    mask = self.current_masks[name]
+                    
+                    # Keep old parameters where mask is 0, use new parameters where mask is 1
+                    updated_params[name] = (param * (1 - mask)) + (params[name] * mask)
+                else:
+                    # For parameters without masks, keep original values
+                    updated_params[name] = param
+                    
+            self.model.set_params(updated_params)
+        else:
+            self.model.set_params(params)
