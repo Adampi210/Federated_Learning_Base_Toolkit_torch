@@ -24,7 +24,12 @@ class BaseModelArchitecture(nn.Module):
 ##################################################
 class BaseNeuralNetwork():
     def __init__(self, model_architecture, device=None):
-        self.model = model_architecture
+        # If class, create instance
+        if isinstance(model_architecture, type):
+            self.model = model_architecture()
+        # Otherwise use the instance
+        else:
+            self.model = model_architecture
         self.device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
     
@@ -32,7 +37,11 @@ class BaseNeuralNetwork():
         self.model.train()
         for epoch in range(epochs):
             total_loss = 0
-            for inputs, targets in data_loader:
+            for batch in data_loader:
+                if len(batch) > 2:
+                    inputs, targets, _ = batch  # Ignore rest
+                else:
+                    inputs, targets = batch
                 inputs, targets = inputs.to(self.device), targets.to(self.device)
                 optimizer.zero_grad()
                 outputs = self.model(inputs)
@@ -47,7 +56,11 @@ class BaseNeuralNetwork():
         self.model.eval()
         total_metric = 0
         with torch.no_grad():
-            for inputs, targets in data_loader:
+            for batch in data_loader:
+                if len(batch) > 2:
+                    inputs, targets, _ = batch  # Ignore rest
+                else:
+                    inputs, targets = batch
                 inputs, targets = inputs.to(self.device), targets.to(self.device)
                 outputs = self.model(inputs)
                 total_metric += metric_fn(outputs, targets).item()
