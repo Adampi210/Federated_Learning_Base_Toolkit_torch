@@ -7,6 +7,7 @@ from .data_operations import (
     FashionMNISTDataHandler,
     CIFAR10DataHandler,
     CIFAR100DataHandler,
+    PACSDataHandler,
     DataDrift,
     ConceptDrift, 
     DriftedDataset
@@ -48,6 +49,7 @@ __all__ = [
     'FashionMNISTDataHandler',
     'CIFAR10DataHandler',
     'CIFAR100DataHandler',
+    'PACSDataHandler',
     
     # Drift operations
     'DataDrift',

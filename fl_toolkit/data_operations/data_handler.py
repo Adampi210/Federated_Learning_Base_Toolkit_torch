@@ -1,14 +1,14 @@
 # data_operations/data_handler.py
 
+import os
 import torch
 import torchvision
 import torchvision.transforms as transforms
 import numpy as np
-from torch.utils.data import Dataset, DataLoader, TensorDataset
-from typing import Optional, Callable, Union, List, Tuple, Any
-from abc import ABC, abstractmethod
-
-from .data_splitter import iid_split, non_iid_split
+from torch.utils.data import Dataset, DataLoader, TensorDataset, Subset
+from .data_splitter import iid_split, non_iid_split, ClientSpec
+from flwr_datasets import FederatedDataset
+from flwr_datasets.partitioner import IidPartitioner
 
 # Works with any type of data
 class BaseDataHandler():
@@ -237,3 +237,119 @@ class CIFAR100DataHandler(BaseDataHandler):
             'num_classes': 100,
             'input_shape': (3, 32, 32)
         }        
+
+class PACSDataset(Dataset):
+    """PyTorch Dataset wrapper for PACS data"""
+    def __init__(self, data_list, transform=None):
+        """
+        Args:
+            data_list: List of tuples (image, label, domain)
+            transform: Optional transform
+        """
+        self.data = data_list
+        self.transform = transform
+    
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, idx):
+        image, label, domain = self.data[idx]
+        
+        if self.transform:
+            image = self.transform(image)
+            
+        return image, label, domain
+
+class PACSDataHandler(BaseDataHandler):
+    def __init__(self, transform=None):
+        super().__init__(transform)
+        self.domains = ['photo', 'art_painting', 'cartoon', 'sketch']
+        self.categories = ['dog', 'elephant', 'giraffe', 'guitar', 'horse', 'house', 'person']
+        self.train_partition = None
+        self.test_partition = None
+        
+    def get_default_transforms(self):
+        train_transform = transforms.Compose([
+            transforms.RandomHorizontalFlip(),  # Keep this for basic augmentation
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                               std=[0.229, 0.224, 0.225])
+        ])
+        
+        test_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                               std=[0.229, 0.224, 0.225])
+        ])
+        return train_transform, test_transform
+    
+    def load_data(self, **kwargs):
+        """Load train and test datasets"""
+        if self.transform is None:
+            self.transform, test_transform = self.get_default_transforms()
+        else:
+            test_transform = self.transform
+        
+        # Initialize dataset
+        fds = FederatedDataset(
+            dataset="flwrlabs/pacs",
+            partitioners={"train": IidPartitioner(num_partitions=1)}
+        )
+        
+        # Load single partition which contains all data
+        partition = fds.load_partition(0)
+        
+        # Convert to list of (image, label, domain) tuples
+        data_list = [
+            (sample['image'], sample['label'], sample['domain']) 
+            for sample in partition
+        ]
+        
+        # Split into train/test (80/20)
+        total_size = len(data_list)
+        train_size = int(0.8 * total_size)
+        
+        train_data = data_list[:train_size]
+        test_data = data_list[train_size:]
+        
+        # Create PyTorch datasets
+        self.train_dataset = PACSDataset(train_data, transform=self.transform)
+        self.test_dataset = PACSDataset(test_data, transform=test_transform)
+    
+    def get_domain_data(self, domain: str) -> tuple:
+        """Get all data for a specific domain from both train and test sets"""
+        if domain not in self.domains:
+            raise ValueError(f"Domain must be one of {self.domains}")
+        
+        if self.train_dataset is None or self.test_dataset is None:
+            raise ValueError("Datasets not loaded. Call load_data first.")
+            
+        # Get indices for the specified domain in train set
+        train_indices = [
+            i for i in range(len(self.train_dataset))
+            if self.train_dataset.data[i][2] == domain  # domain is third element in tuple
+        ]
+        
+        # Get indices for the specified domain in test set
+        test_indices = [
+            i for i in range(len(self.test_dataset))
+            if self.test_dataset.data[i][2] == domain
+        ]
+        
+        return (
+            Subset(self.train_dataset, train_indices),
+            Subset(self.test_dataset, test_indices)
+        )
+    
+    def get_dataset_info(self):
+        if self.train_dataset is None:
+            raise ValueError("No dataset loaded")
+        return {
+            'name': 'PACS',
+            'train_size': len(self.train_dataset),
+            'test_size': len(self.test_dataset),
+            'num_classes': len(self.categories),
+            'input_shape': (3, 224, 224),
+            'categories': self.categories,
+            'domains': self.domains
+        }

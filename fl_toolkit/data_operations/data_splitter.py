@@ -78,3 +78,106 @@ def non_iid_split(dataset, num_clients, strategy='non_iid_default', **kwargs):
         return _non_iid_default_split(dataset, num_clients, kwargs['num_classes_per_client'])
     else:
         raise ValueError(f"Unknown non-IID strategy: {strategy}")
+
+# PACS domain and  class splitting
+# Specifies which domains and how many classes a client should get
+class ClientSpec:
+    def __init__(self, domains, num_classes, min_samples_per_class):
+        self.domains = domains
+        self.num_classes = num_classes
+        self.min_samples_per_class = min_samples_per_class
+
+# Helper to get domains and labels from a given datapoint
+def get_domain_and_label(dataset, idx):
+    if hasattr(dataset, '__getitem__'):
+        _, label, domain = dataset[idx]
+        return domain, label
+    raise ValueError("Dataset doesn't support item access")
+
+def custom_pacs_split(dataset, client_specs, balance_classes):
+    # Group all data by domain and class
+    domain_class_indices = defaultdict(lambda: defaultdict(list))
+    for idx in range(len(dataset)):
+        domain, label = get_domain_and_label(dataset, idx)
+        domain_class_indices[domain][label].append(idx)
+    
+    # Get all unique classes
+    all_classes = set()
+    for domain_data in domain_class_indices.values():
+        all_classes.update(domain_data.keys())
+    all_classes = list(all_classes)
+    
+    client_datasets = []
+    
+    # For each client specification
+    for spec in client_specs:
+        # Verify domains exist
+        for domain in spec.domains:
+            if domain not in domain_class_indices:
+                raise ValueError(f"Domain {domain} not found in dataset")
+        
+        # Find available classes for this client's domains
+        available_classes = set()
+        class_counts = defaultdict(int)  # Track samples per class across specified domains
+        
+        for domain in spec.domains:
+            for class_label in domain_class_indices[domain]:
+                available_classes.add(class_label)
+                class_counts[class_label] += len(domain_class_indices[domain][class_label])
+        
+        # Filter classes that don't meet minimum sample requirement
+        if spec.min_samples_per_class:
+            available_classes = {
+                class_label for class_label in available_classes 
+                if class_counts[class_label] >= spec.min_samples_per_class
+            }
+        
+        if len(available_classes) < spec.num_classes:
+            raise ValueError(
+                f"Not enough classes available for client specification. "
+                f"Required: {spec.num_classes}, Available: {len(available_classes)}"
+            )
+        
+        # Randomly select classes for this client
+        selected_classes = np.random.choice(
+            list(available_classes), 
+            size=spec.num_classes, 
+            replace=False
+        )
+        
+        # Collect indices for selected classes from specified domains
+        client_indices = []
+        
+        if balance_classes:
+            # Find minimum number of samples per class across selected domains
+            min_samples = float('inf')
+            for class_label in selected_classes:
+                total_samples = sum(
+                    len(domain_class_indices[domain][class_label])
+                    for domain in spec.domains
+                )
+                min_samples = min(min_samples, total_samples)
+                
+            # Collect balanced samples
+            for class_label in selected_classes:
+                class_indices = []
+                for domain in spec.domains:
+                    if class_label in domain_class_indices[domain]:
+                        class_indices.extend(domain_class_indices[domain][class_label])
+                
+                # Randomly sample to maintain balance
+                samples_per_class = min(min_samples, len(class_indices))
+                selected = np.random.choice(class_indices, 
+                                         size=samples_per_class, 
+                                         replace=False)
+                client_indices.extend(selected)
+        else:
+            # Collect all available samples
+            for class_label in selected_classes:
+                for domain in spec.domains:
+                    if class_label in domain_class_indices[domain]:
+                        client_indices.extend(domain_class_indices[domain][class_label])
+        
+        client_datasets.append(Subset(dataset, client_indices))
+    
+    return client_datasets
