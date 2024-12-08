@@ -247,7 +247,7 @@ def test_federated():
 if __name__ == "__main__":
     # First test the dataset
     print("Testing the dataset")
-    # test_dataset()
+    test_dataset()
     
     print("Testing single client scenario:")
     test_single_client()
