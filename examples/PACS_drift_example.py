@@ -126,131 +126,68 @@ def test_dataset():
 
 def test_single_client():
     # Initialize dataset
-    handler = PACSDataHandler()
-    handler.load_data()
+    pacs_handler = PACSDataHandler()
+    pacs_handler.load_data()
     
     # Get data for initial domain (photo)
-    train_data, test_data = handler.get_domain_data('photo')
-    
-    # Create drift configuration
-    drift = PACSDomainDrift(
-        source_domains=['photo'],
-        target_domains=['art_painting', 'cartoon'],
+    train_data, test_data = pacs_handler.train_dataset, pacs_handler.test_dataset
+
+    # Create separate drift configurations for train and test
+    train_drift = PACSDomainDrift(
+        source_domains=['photo', 'cartoon'],
+        target_domains=['sketch', 'art_painting'],
         drift_rate=0.2,
-        desired_size=len(train_data)
+        desired_size=len(train_data) / 2
     )
     
-    # Create client
+    test_drift = PACSDomainDrift(
+        source_domains=['photo', 'cartoon'],
+        target_domains=['sketch', 'art_painting'],
+        drift_rate=0.2,
+        desired_size=len(test_data) / 2
+    )
+    
+    # Create client with separate drift handlers
     client = FederatedDriftClient(
         client_id=0,
         model_architecture=PACSCNN,  # Pass class, not instance
-        domain_drift=drift
+        train_domain_drift=train_drift,
+        test_domain_drift=test_drift
     )
     
     # Set data
     train_loader = DataLoader(train_data, batch_size=32, shuffle=True)
     test_loader = DataLoader(test_data, batch_size=32)
+
     client.set_data(train_loader, test_loader)
-    
-    # Now we access the actual model through client.model.model
+
+    # Access the actual model parameters
     optimizer = optim.Adam(client.model.model.parameters())
     criterion = nn.CrossEntropyLoss()
     
     # Training loop
     print("Initial training on source domain...")
     for epoch in range(5):
-        client.train(1, optimizer, criterion)
+        client.train(epochs=1, optimizer=optimizer, loss_fn=criterion)
         acc = client.evaluate(
             metric_fn=lambda outputs, targets: (outputs.argmax(dim=1) == targets).float().mean()
         )
         print(f"Epoch {epoch}, Accuracy: {acc:.4f}")
-    
+
     print("\nApplying drift...")
     for step in range(5):
-        client.update_drift()
+        client.apply_train_drift()  # Apply drift to training data
+        client.apply_test_drift()   # Apply drift to testing data
         acc = client.evaluate(
             metric_fn=lambda outputs, targets: (outputs.argmax(dim=1) == targets).float().mean()
         )
-        print(f"Drift step {step}, Accuracy: {acc:.4f}")
-        
-def test_federated():
-    # Initialize dataset
-    handler = PACSDataHandler()
-    handler.load_data()
-    
-    # Create clients with different initial domains
-    domains = ['photo', 'art_painting', 'cartoon']
-    clients = []
-    
-
-    for i, domain in enumerate(domains):
-        train_data, test_data = handler.get_domain_data(domain)
-        
-        drift = PACSDomainDrift(
-            source_domains=[domain],
-            target_domains=list(set(domains) - {domain}),
-            drift_rate=0.2,
-            desired_size=len(train_data)
-        )
-        
-        client = FederatedDriftClient(
-            client_id=i,
-            model_architecture=PACSCNN,
-            domain_drift=drift
-        )
-        
-        train_loader = DataLoader(train_data, batch_size=32, shuffle=True)
-        test_loader = DataLoader(test_data, batch_size=32)
-        client.set_data(train_loader, test_loader)
-        clients.append(client)
-    
-    # Initialize server
-    server = FederatedServer(PACSCNN)
-    
-    print("Initial federated training...")
-    for round in range(5):  # Federated training rounds
-        # Client training
-        for client in clients:
-            optimizer = optim.Adam(client.model.parameters())
-            criterion = nn.CrossEntropyLoss()
-            client.train(1, optimizer, criterion)
-        
-        # Server aggregation
-        server.aggregate_models([client.get_model_params() for client in clients])
-        
-        # Update clients
-        for client in clients:
-            client.set_model_params(server.get_model_params())
-        
-        # Evaluate
-        accs = []
-        for i, client in enumerate(clients):
-            acc = client.evaluate(
-                metric_fn=lambda outputs, targets: (outputs.argmax(dim=1) == targets).float().mean()
-            )
-            accs.append(acc)
-            print(f"Round {round}, Client {i} Accuracy: {acc:.4f}")
-    
-    print("\nApplying drift to all clients...")
-    for step in range(5):  # Drift steps
-        for client in clients:
-            client.update_drift()
-        
-        accs = []
-        for i, client in enumerate(clients):
-            acc = client.evaluate(metric_fn=lambda y_true, y_pred: (y_true == y_pred).float().mean())
-            accs.append(acc)
-            print(f"Drift step {step}, Client {i} Accuracy: {acc:.4f}")
-        print(f"Drift step {step}, Average Accuracy: {np.mean(accs):.4f}")
-
+        print(f"Drift step {step}, Accuracy: {acc:.4f}\n\n")
     
 if __name__ == "__main__":
     # First test the dataset
     print("Testing the dataset")
-    test_dataset()
+    # test_dataset()
     
     print("Testing single client scenario:")
     test_single_client()
     
-    print("\nTesting federated scenario:")
-    test_federated()

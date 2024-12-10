@@ -41,9 +41,10 @@ class FederatedClient():
     
 # Federated Learning client that experiences concept drift
 class FederatedDriftClient(FederatedClient):    
-    def __init__(self, client_id, model_architecture, domain_drift=None, device=None):
+    def __init__(self, client_id, model_architecture, train_domain_drift=None, test_domain_drift=None, device=None):
         super().__init__(client_id, model_architecture, device)
-        self.domain_drift = domain_drift
+        self.train_domain_drift = train_domain_drift
+        self.test_domain_drift = test_domain_drift
         self.original_train_loader = None
         self.original_test_loader = None
         
@@ -53,27 +54,46 @@ class FederatedDriftClient(FederatedClient):
         self.train_loader = train_loader
         self.test_loader = test_loader
         
-        if self.domain_drift is not None:
-            self.apply_drift()
-            
-       
-    def apply_drift(self):
-        if self.train_loader is not None:
-            # Use domain_drift's apply method
-            drifted_train = self.domain_drift.apply(self.original_train_loader.dataset)
+        if self.train_domain_drift is not None:
+            self.apply_train_drift()
+        
+        if self.test_domain_drift is not None:
+            self.apply_test_drift()
+        
+    def apply_train_drift(self):
+        if self.train_loader is not None and self.train_domain_drift is not None:
+            # Apply drift only to the training dataset
+            print('train drift')
+            drifted_train = self.train_domain_drift.apply(self.original_train_loader.dataset)
+            print(f'photo samples: {self.count_domain_samples(drifted_train, 'photo')}')
+            print(f'sketch samples: {self.count_domain_samples(drifted_train, 'sketch')}')
+            print(f'art painting samples: {self.count_domain_samples(drifted_train, 'art_painting')}')
+            print(f'cartoon samples: {self.count_domain_samples(drifted_train, 'cartoon')}')
+
             self.train_loader = DataLoader(
                 drifted_train,
                 batch_size=self.original_train_loader.batch_size,
                 shuffle=True,
             )
-            
-        if self.test_loader is not None:
-            drifted_test = self.domain_drift.apply(self.original_test_loader.dataset)
+
+    def apply_test_drift(self):
+        if self.test_loader is not None and self.test_domain_drift is not None:
+            # Apply drift only to the testing dataset
+            drifted_test = self.test_domain_drift.apply(self.original_test_loader.dataset)
+            print('test drift')
+            print(f'photo samples: {self.count_domain_samples(drifted_test, 'photo')}')
+            print(f'sketch samples: {self.count_domain_samples(drifted_test, 'sketch')}')
+            print(f'art painting samples: {self.count_domain_samples(drifted_test, 'art_painting')}')
+            print(f'cartoon samples: {self.count_domain_samples(drifted_test, 'cartoon')}')
+
             self.test_loader = DataLoader(
                 drifted_test,
                 batch_size=self.original_test_loader.batch_size,
                 shuffle=False,
             )
+    def count_domain_samples(self, dataset, domain):
+        return len([i for i in range(len(dataset)) if dataset[i][2] == domain])
+
     
 # Federated Learning client that utilizes compression algorithms during communication
 class FederatedCompressedClient(FederatedClient):

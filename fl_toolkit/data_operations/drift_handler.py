@@ -37,6 +37,8 @@ class PACSDomainDrift:
         # First call - initialize with source domains
         if not self.used_source_indices and not self.used_target_indices:
             source_indices = self._get_domain_indices(dataset, self.source_domains)
+            if len(source_indices) == 0:
+                raise ValueError("No source domain samples available to initialize drift.")
             initial_size = len(source_indices) if self.desired_size is None else min(len(source_indices), self.desired_size)
             self.used_source_indices = set(random.sample(source_indices, initial_size))
             return Subset(dataset, list(self.used_source_indices))
@@ -48,9 +50,10 @@ class PACSDomainDrift:
         all_target_indices = set(self._get_domain_indices(dataset, self.target_domains))
         available_target = all_target_indices - self.used_target_indices
         
-        # If we run out of target samples, use existing target indices
+        # If no available target samples left, reuse existing target indices
         if not available_target:
             available_target = all_target_indices
+            print("No available target samples left. Reusing existing target indices.")
         
         if self.desired_size is None or current_size < self.desired_size:
             # Case 1: Can add more samples
@@ -67,6 +70,7 @@ class PACSDomainDrift:
                 self.used_target_indices.update(add_samples)
                 
                 to_replace = drift_samples - len(add_samples)
+                
                 if self.used_source_indices:
                     # Replace from source indices if available
                     replace_indices = self._sample_indices(self.used_source_indices, to_replace)
@@ -94,4 +98,9 @@ class PACSDomainDrift:
             self.used_target_indices.update(new_samples)
             all_indices = list(self.used_source_indices | self.used_target_indices)
         
-        return Subset(dataset, all_indices)
+        # Ensure all_indices are within the dataset range
+        valid_indices = [idx for idx in all_indices if 0 <= idx < len(dataset)]
+        if len(valid_indices) != len(all_indices):
+            print(f"Warning: Some indices were out of range and have been removed. Valid indices count: {len(valid_indices)}")
+        
+        return Subset(dataset, valid_indices)
