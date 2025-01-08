@@ -35,6 +35,7 @@ class BaseNeuralNetwork():
     
     def train(self, data_loader, optimizer, loss_fn, epochs, verbose=False):
         self.model.train()
+        avg_loss = 0
         for epoch in range(epochs):
             total_loss = 0
             for batch in data_loader:
@@ -51,6 +52,9 @@ class BaseNeuralNetwork():
                 total_loss += loss.item()
             if verbose:
                 print(f"Epoch {epoch + 1}/{epochs}, Loss: {total_loss / len(data_loader):.4f}")
+            avg_loss += total_loss / len(data_loader)
+        avg_loss /= epochs
+        return avg_loss
     
     def evaluate(self, data_loader, metric_fn, verbose=False):
         self.model.eval()

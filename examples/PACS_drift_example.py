@@ -129,7 +129,7 @@ def test_single_client():
     pacs_handler = PACSDataHandler()
     pacs_handler.load_data()
     
-    # Get data for initial domain (photo)
+    # Get data
     train_data, test_data = pacs_handler.train_dataset, pacs_handler.test_dataset
 
     # Create separate drift configurations for train and test

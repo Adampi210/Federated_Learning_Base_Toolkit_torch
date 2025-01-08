@@ -23,12 +23,15 @@ class FederatedClient():
     def train(self, epochs, optimizer, loss_fn, verbose=False):
         if self.train_loader is None:
             raise ValueError("Train loader is not set. Use set_data() method to set the train loader")
-        self.model.train(self.train_loader, optimizer, loss_fn, epochs, verbose)
+        return self.model.train(self.train_loader, optimizer, loss_fn, epochs, verbose)
     
     def evaluate(self, metric_fn, verbose=False):
         if self.test_loader is None:
             raise ValueError("Test loader is not set. Use set_data() method to set the test loader")
         return self.model.evaluate(self.test_loader, metric_fn, verbose)
+
+    def get_model(self):
+        return self.model.model
 
     def get_model_params(self):
         return self.model.get_params()
@@ -96,6 +99,11 @@ class FederatedDriftClient(FederatedClient):
             
     def count_domain_samples(self, dataset, domain):
         return len([i for i in range(len(dataset)) if dataset[i][2] == domain])
+
+    def get_train_metric(self, metric_fn, verbose = False):
+        if self.train_loader is None:
+            raise ValueError("Train loader is not set. Use set_data() method to set the train loader")
+        return self.model.evaluate(self.train_loader, metric_fn, verbose)
 
 # Federated Learning client that utilizes compression algorithms during communication
 class FederatedCompressedClient(FederatedClient):
