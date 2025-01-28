@@ -69,15 +69,16 @@ class FederatedDriftClient(FederatedClient):
             # Apply drift only to the training dataset
             if verbose:
                 print('train drift')
-                print(f'photo samples: {self.count_domain_samples(drifted_train, 'photo')}')
-                print(f'sketch samples: {self.count_domain_samples(drifted_train, 'sketch')}')
-                print(f'art painting samples: {self.count_domain_samples(drifted_train, 'art_painting')}')
-                print(f'cartoon samples: {self.count_domain_samples(drifted_train, 'cartoon')}')
+                # print(f'photo samples: {self.count_domain_samples(drifted_train, 'photo')}')
+                # print(f'sketch samples: {self.count_domain_samples(drifted_train, 'sketch')}')
+                # print(f'art painting samples: {self.count_domain_samples(drifted_train, 'art_painting')}')
+                # print(f'cartoon samples: {self.count_domain_samples(drifted_train, 'cartoon')}')
 
             self.train_loader = DataLoader(
                 drifted_train,
                 batch_size=self.original_train_loader.batch_size,
                 shuffle=True,
+                num_workers=self.original_train_loader.num_workers
             )
 
     def apply_test_drift(self, verbose=False):
@@ -86,15 +87,16 @@ class FederatedDriftClient(FederatedClient):
             drifted_test = self.test_domain_drift.apply(self.original_test_loader.dataset)
             if verbose:
                 print('test drift')
-                print(f'photo samples: {self.count_domain_samples(drifted_test, 'photo')}')
-                print(f'sketch samples: {self.count_domain_samples(drifted_test, 'sketch')}')
-                print(f'art painting samples: {self.count_domain_samples(drifted_test, 'art_painting')}')
-                print(f'cartoon samples: {self.count_domain_samples(drifted_test, 'cartoon')}')
+                # rint(f'photo samples: {self.count_domain_samples(drifted_test, 'photo')}')
+                # print(f'sketch samples: {self.count_domain_samples(drifted_test, 'sketch')}')
+                # print(f'art painting samples: {self.count_domain_samples(drifted_test, 'art_painting')}')
+                # print(f'cartoon samples: {self.count_domain_samples(drifted_test, 'cartoon')}')
 
             self.test_loader = DataLoader(
                 drifted_test,
                 batch_size=self.original_test_loader.batch_size,
                 shuffle=False,
+                num_workers=self.original_test_loader.num_workers
             )
             
     def count_domain_samples(self, dataset, domain):
