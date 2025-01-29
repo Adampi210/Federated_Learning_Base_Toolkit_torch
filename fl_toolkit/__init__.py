@@ -17,6 +17,7 @@ from .data_operations import (
 from .federated import (
     FederatedClient,
     FederatedDriftClient,
+    FederatedDriftClientCIFAR10,
     FederatedCompressedClient,
     FederatedServer,
     FederatedCompressedServer
@@ -59,6 +60,7 @@ __all__ = [
     # Federated
     'FederatedClient',
     'FederatedDriftClient',
+    'FederatedDriftClientCIFAR10',
     'FederatedCompressedClient',
     'FederatedServer',
     'FederatedCompressedServer',

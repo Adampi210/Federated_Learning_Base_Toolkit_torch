@@ -1,10 +1,12 @@
 # data_operations/drift_handlers.py
 
 import random
+import torch
 from torch.utils.data import Subset
 from torchvision import transforms
-import PIL
 import torchvision.transforms.functional as F
+import numpy as np
+import PIL
 from enum import Enum
 
 # PACS Drift
@@ -107,139 +109,178 @@ class PACSDomainDrift:
         
         return Subset(dataset, valid_indices)
 
-class TransformedSubset(Subset):
-    def __init__(self, dataset, indices, drifted_indices, transform):
-        super().__init__(dataset, indices)
-        self.drifted_indices = drifted_indices
-        self.transform = transform
-
-    def __getitem__(self, idx):
-        real_idx = self.indices[idx]
-        x, y = self.dataset[real_idx]
-        if real_idx in self.drifted_indices:
-            x = self.transform(x)
-        return x, y
-
 class CIFAR10DomainDrift:
-    default_transform = transforms.ColorJitter(brightness=0.5)
-
-    def __init__(self, drift_rate, desired_size=None, transform=None):
-        self.drift_rate = drift_rate
-        self.desired_size = desired_size
-        self.transform = transform if transform else self.default_transform
-        self.base_indices = set()
-        self.drifted_indices = set()
+    def __init__(self, drift_rate, transform=None, seed=None):
+        self.drift_rate = min(drift_rate, 1.0)
+        self.transform = transform
+        if seed is not None:
+            random.seed(seed)
     
     def apply(self, dataset):
-        # First call - initialize with base samples
-        if not self.base_indices and not self.drifted_indices:
-            all_indices = list(range(len(dataset)))
-            initial_size = len(all_indices) if self.desired_size is None else min(len(all_indices), self.desired_size)
-            self.base_indices = set(random.sample(all_indices, initial_size))
-            return TransformedSubset(dataset, list(self.base_indices), self.drifted_indices, self.transform)
+        # Get the original data
+        data = []
+        targets = []
+        for x, y in dataset:
+            data.append(x)
+            targets.append(y)
         
-        current_size = len(self.base_indices) + len(self.drifted_indices)
-        drift_samples = int(current_size * self.drift_rate)
+        # Convert to tensors
+        data = torch.stack(data)
+        targets = torch.tensor(targets)
         
-        if self.desired_size is None or current_size < self.desired_size:
-            # Case 1: Can add more samples
-            space_left = float('inf') if self.desired_size is None else self.desired_size - current_size
-            drift_samples = min(drift_samples, int(space_left))
+        # Select indices to drift
+        n_samples = len(dataset)
+        n_drift = int(n_samples * self.drift_rate)
+        drift_indices = random.sample(range(n_samples), n_drift)
+        
+        # Apply drift to selected samples
+        for idx in drift_indices:
+            x = data[idx]
+            # Unnormalize
+            mean = torch.tensor([0.5, 0.5, 0.5]).view(3, 1, 1)
+            std = torch.tensor([0.5, 0.5, 0.5]).view(3, 1, 1)
+            x = x * std + mean
+            # Convert to PIL for transformation
+            x = transforms.ToPILImage()(x)
+            # Apply drift transform
+            x = self.transform(x)
+            # Convert back to tensor and normalize
+            x = transforms.ToTensor()(x)
+            x = transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))(x)
+            # Store back
+            data[idx] = x
             
-            to_drift = self._sample_indices(self.base_indices, drift_samples)
-            self.base_indices -= set(to_drift)
-            self.drifted_indices.update(to_drift)
-        else:
-            # Case 2: At desired size, replace samples
-            to_remove = self._sample_indices(self.drifted_indices, drift_samples)
-            self.drifted_indices -= set(to_remove)
-            
-            to_drift = self._sample_indices(self.base_indices, drift_samples)
-            self.base_indices -= set(to_drift)
-            self.drifted_indices.update(to_drift)
-            self.base_indices.update(to_remove)
-            
-        return TransformedSubset(dataset, list(self.base_indices | self.drifted_indices), 
-                               self.drifted_indices, self.transform)
-    
-    def _sample_indices(self, available_indices, n):
-        if n <= 0:
-            return []
-        n = min(n, len(available_indices))
-        return random.sample(list(available_indices), n)
+        # Create new TensorDataset
+        return torch.utils.data.TensorDataset(data, targets)
 
 class CIFAR10DriftTypes:
     @staticmethod
-    def gaussian_noise(base_severity=0.1, variation=0.02):
+    def color_balance_drift(factor=0.4):
+        """Color adjustments with stronger factor"""
+        def apply_color_balance(img):
+            img = transforms.functional.adjust_saturation(img, 1 + factor)
+            img = transforms.functional.adjust_hue(img, factor * 0.5)
+            return img
+        return apply_color_balance
+    
+    @staticmethod
+    def bounded_darkness_drift(factor=0.2):
+        """Reduces brightness with sigmoid-bounded factor to prevent total darkness"""
+        def apply_darkness(img):
+            # Use sigmoid to bound the darkening effect
+            darkness = 1 - (1 / (1 + np.exp(-factor)))  # Will be bounded between 0 and 1
+            min_brightness = 0.6  # Never go below 60% brightness
+            effective_factor = min_brightness + (1 - min_brightness) * darkness
+            return transforms.functional.adjust_brightness(img, effective_factor)
+        return apply_darkness
+    
+    @staticmethod
+    def soft_gamma_drift(gamma_factor=0.3):
+        """Applies gamma with bounded range to avoid extreme darkening"""
+        def apply_soft_gamma(img):
+            # Bound gamma between 1 and 2.5 using sigmoid
+            max_gamma = 1.3
+            min_gamma = 1.05
+            bounded_factor = min_gamma + (max_gamma - min_gamma) * (1 / (1 + np.exp(-gamma_factor)))
+            return transforms.functional.adjust_gamma(img, bounded_factor)
+        return apply_soft_gamma
+    
+    @staticmethod
+    def color_wash_drift(factor=0.3):
+        """Gradually washes out colors while preserving image structure"""
+        def apply_color_wash(img):
+            # Reduce saturation and slightly adjust brightness
+            img = transforms.functional.adjust_saturation(img, 1 - factor * 0.5)  # Reduce saturation
+            # Add slight brightness adjustment but keep it above 0.7
+            brightness_factor = 0.7 + 0.3 * (1 / (1 + np.exp(-factor)))
+            img = transforms.functional.adjust_brightness(img, brightness_factor)
+            return img
+        return apply_color_wash
+
+    @staticmethod
+    def gaussian_noise(base_severity=0.5):
         """
-        Noise severity will randomly vary in [base_severity - variation, base_severity + variation].
+        Apply Gaussian noise with specified severity
         """
         def add_noise(img):
-            # Sample a random noise level near 'base_severity'
-            current_severity = random.uniform(base_severity - variation, base_severity + variation)
-            return img + torch.randn_like(img) * current_severity
-        
+            img = torch.tensor(np.array(img))
+            noise = torch.randn_like(img.float()) * base_severity
+            noisy_img = img.float() + noise
+            noisy_img = torch.clamp(noisy_img, 0, 1)
+            return transforms.ToPILImage()(noisy_img)
+        return add_noise
+
+    @staticmethod
+    def rotation_drift(base_angle=30):
+        """
+        Fixed rotation by base_angle degrees
+        """
+        return lambda img: transforms.functional.rotate(img, base_angle)
+
+    @staticmethod
+    def blur_drift(kernel_size=5, sigma=2.0):
+        """
+        Fixed Gaussian blur
+        """
+        return lambda img: transforms.functional.gaussian_blur(img, kernel_size, sigma)
+    @staticmethod
+    def gaussian_noise(base_severity=10, variation=1):
+        """
+        Note: Since torchvision doesn't have a built-in Gaussian noise transform,
+        we'll use RandomErasing as the closest alternative for introducing random noise.
+        """
         return transforms.Compose([
-            transforms.Lambda(add_noise)
+            transforms.RandomErasing(p=1.0, scale=(0.02, 0.05), ratio=(0.3, 3.3), 
+                          value='random')
         ])
-    
+
     @staticmethod
     def rotation_drift(base_angle=30, angle_variation=5):
         """
         Rotation angle will randomly vary in [base_angle - angle_variation, base_angle + angle_variation].
         """
-        def rotate(img):
-            current_angle = random.uniform(base_angle - angle_variation, base_angle + angle_variation)
-            return F.rotate(img, current_angle)
-        
         return transforms.Compose([
-            transforms.Lambda(rotate)
+            transforms.RandomRotation(
+                degrees=(base_angle - angle_variation, base_angle + angle_variation)
+            )
         ])
-    
+
     @staticmethod
     def blur_drift(kernel_size=3, base_sigma=2.0, sigma_variation=0.5):
         """
-        Sigma will randomly vary in [base_sigma - sigma_variation, base_sigma + sigma_variation].
+        Applies Gaussian blur with specified kernel size and sigma range.
         """
-        def random_blur(img):
-            current_sigma = random.uniform(base_sigma - sigma_variation, base_sigma + sigma_variation)
-            return F.gaussian_blur(img, kernel_size=kernel_size, sigma=current_sigma)
-        
         return transforms.Compose([
-            transforms.Lambda(random_blur)
+            transforms.GaussianBlur(
+                kernel_size=kernel_size,
+                sigma=(base_sigma - sigma_variation, base_sigma + sigma_variation)
+            )
         ])
-    
+
     @staticmethod
     def color_shift(base_brightness=1.3, brightness_variation=0.1,
                     base_contrast=1.2, contrast_variation=0.1):
         """
-        Brightness factor in [base_brightness - brightness_variation, base_brightness + brightness_variation].
-        Contrast factor in [base_contrast - contrast_variation, base_contrast + contrast_variation].
+        Applies random brightness and contrast adjustments.
         """
-        def random_color(img):
-            # Random brightness and contrast near their base
-            brightness_factor = random.uniform(base_brightness - brightness_variation,
-                                               base_brightness + brightness_variation)
-            contrast_factor = random.uniform(base_contrast - contrast_variation,
-                                             base_contrast + contrast_variation)
-            img = F.adjust_brightness(img, brightness_factor)
-            img = F.adjust_contrast(img, contrast_factor)
-            return img
-        
         return transforms.Compose([
-            transforms.Lambda(random_color)
+            transforms.ColorJitter(
+                brightness=(base_brightness - brightness_variation,
+                          base_brightness + brightness_variation),
+                contrast=(base_contrast - contrast_variation,
+                         base_contrast + contrast_variation)
+            )
         ])
-    
+
     @staticmethod
     def intensity_drift(base_factor=0.8, factor_variation=0.05):
         """
-        Intensity factor (multiplicative) will vary in 
-        [base_factor - factor_variation, base_factor + factor_variation].
+        Note: Using ColorJitter's brightness adjustment as the closest equivalent
+        to intensity scaling in torchvision.transforms
         """
-        def random_intensity(img):
-            factor = random.uniform(base_factor - factor_variation, base_factor + factor_variation)
-            return img * factor
-        
         return transforms.Compose([
-            transforms.Lambda(random_intensity)
+            transforms.ColorJitter(
+                brightness=(base_factor - factor_variation,
+                          base_factor + factor_variation)
+            )
         ])
