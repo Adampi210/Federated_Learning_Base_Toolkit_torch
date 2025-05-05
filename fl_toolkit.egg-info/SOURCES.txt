@@ -9,9 +9,12 @@ fl_toolkit.egg-info/top_level.txt
 fl_toolkit/data_operations/__init__.py
 fl_toolkit/data_operations/data_handler.py
 fl_toolkit/data_operations/data_splitter.py
+fl_toolkit/data_operations/drift_handler.py
 fl_toolkit/federated/__init__.py
 fl_toolkit/federated/client.py
 fl_toolkit/federated/server.py
+fl_toolkit/model_operations/__init__.py
+fl_toolkit/model_operations/compressor.py
 fl_toolkit/models/__init__.py
 fl_toolkit/models/base_model.py
 fl_toolkit/utils/__init__.py
