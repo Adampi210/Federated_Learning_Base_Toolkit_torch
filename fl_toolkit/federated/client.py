@@ -25,6 +25,11 @@ class FederatedClient():
             raise ValueError("Train loader is not set. Use set_data() method to set the train loader")
         return self.model.train(self.train_loader, optimizer, loss_fn, epochs, verbose)
     
+    def update_steps(self, num_updates, optimizer, loss_fn, verbose=False):
+        if self.train_loader is None:
+            raise ValueError("Train loader is not set. Use set_data() method to set the train loader")
+        return self.model.update_steps(self.train_loader, optimizer, loss_fn, num_updates, verbose)
+    
     def evaluate(self, metric_fn, verbose=False):
         if self.test_loader is None:
             raise ValueError("Test loader is not set. Use set_data() method to set the test loader")

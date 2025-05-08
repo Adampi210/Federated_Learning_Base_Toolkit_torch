@@ -56,6 +56,32 @@ class BaseNeuralNetwork():
         avg_loss /= epochs
         return avg_loss
     
+    def update_steps(self, data_loader, optimizer, loss_fn, num_updates, verbose=False):
+        self.model.train()
+        iter_loader = iter(data_loader)
+        total_loss = 0
+        for _ in range(num_updates):
+            try:
+                batch = next(iter_loader)
+            except StopIteration:
+                iter_loader = iter(data_loader)
+                batch = next(iter_loader)
+            if len(batch) > 2:
+                inputs, targets, _ = batch
+            else:
+                inputs, targets = batch
+            inputs, targets = inputs.to(self.device), targets.to(self.device)
+            optimizer.zero_grad()
+            outputs = self.model(inputs)
+            loss = loss_fn(outputs, targets)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+        avg_loss = total_loss / num_updates
+        if verbose:
+            print(f"Average loss over {num_updates} updates: {avg_loss:.4f}")
+        return avg_loss
+    
     def evaluate(self, data_loader, metric_fn, verbose=False):
         self.model.eval()
         total_metric = 0

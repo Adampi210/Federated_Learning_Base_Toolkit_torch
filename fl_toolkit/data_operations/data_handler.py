@@ -307,15 +307,18 @@ class PACSDataHandler(BaseDataHandler):
         
         # Split into train/test (80/20)
         total_size = len(data_list)
-        train_size = int(0.8 * total_size)
-        
+        train_size = int(total_size)
+
+        # Only use train data then sample for test dynamically
         train_data = data_list[:train_size]
-        test_data = data_list[train_size:]
+        # 
+        # test_data = data_list[train_size:]
         
         # Create PyTorch datasets
         self.train_dataset = PACSDataset(train_data, transform=self.transform)
-        self.test_dataset = PACSDataset(test_data, transform=test_transform)
-    
+        # self.test_dataset = PACSDataset(test_data, transform=test_transform)
+        self.test_dataset = None
+        
     def get_domain_data(self, domain: str) -> tuple:
         """Get all data for a specific domain from both train and test sets"""
         if domain not in self.domains:
