@@ -266,7 +266,10 @@ class PACSDataHandler(BaseDataHandler):
         super().__init__(transform)
         self.domains = ['photo', 'art_painting', 'cartoon', 'sketch']
         self.categories = ['dog', 'elephant', 'giraffe', 'guitar', 'horse', 'house', 'person',]
-        self.transform = transform
+        if transform is None:
+            self.transform = self.get_default_transforms()
+        else:
+            self.transform = transform
         # Load data by default
         if load_data:
             self.load_data()
