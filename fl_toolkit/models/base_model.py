@@ -104,6 +104,39 @@ class BaseNeuralNetwork():
     
     def set_params(self, params):
         self.model.load_state_dict(params)
+        
+    def randomize_weights(self, init_type='uniform', a=-0.1, b=0.1, mean=0.0, std=0.1, verbose=False):
+        """
+        Randomize the weights and biases of the model.
+        
+        Args:
+            init_type (str): Type of initialization ('uniform' or 'normal'). Default: 'uniform'.
+            a (float): Lower bound for uniform initialization. Default: -0.1.
+            b (float): Upper bound for uniform initialization. Default: 0.1.
+            mean (float): Mean for normal initialization. Default: 0.0.
+            std (float): Standard deviation for normal initialization. Default: 0.1.
+            verbose (bool): If True, print confirmation of randomization. Default: False.
+        
+        Returns:
+            None
+        """
+        def _randomize(m):
+            if hasattr(m, 'weight'):
+                if init_type == 'uniform':
+                    nn.init.uniform_(m.weight, a=a, b=b)
+                elif init_type == 'normal':
+                    nn.init.normal_(m.weight, mean=mean, std=std)
+                else:
+                    raise ValueError(f"Unsupported init_type: {init_type}. Use 'uniform' or 'normal'.")
+            if hasattr(m, 'bias') and m.bias is not None:
+                if init_type == 'uniform':
+                    nn.init.uniform_(m.bias, a=a, b=b)
+                elif init_type == 'normal':
+                    nn.init.normal_(m.bias, mean=mean, std=std)
+        
+        self.model.apply(_randomize)
+        if verbose:
+            print(f"Model weights randomized using {init_type} initialization.")
     
     def save_model(self, path):
         os.makedirs(os.path.dirname(path), exist_ok=True)

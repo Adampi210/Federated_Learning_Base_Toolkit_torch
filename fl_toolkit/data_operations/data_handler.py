@@ -238,6 +238,7 @@ class CIFAR100DataHandler(BaseDataHandler):
             'input_shape': (3, 32, 32)
         }        
 
+# PACS dataset and data handler
 class PACSDataset(Dataset):
     """PyTorch Dataset wrapper for PACS data"""
     def __init__(self, data_list, transform=None):
@@ -261,34 +262,24 @@ class PACSDataset(Dataset):
         return image, label, domain
 
 class PACSDataHandler(BaseDataHandler):
-    def __init__(self, transform=None):
+    def __init__(self, transform=None, load_data=True):
         super().__init__(transform)
         self.domains = ['photo', 'art_painting', 'cartoon', 'sketch']
-        self.categories = ['dog', 'elephant', 'giraffe', 'guitar', 'horse', 'house', 'person']
-        self.train_partition = None
-        self.test_partition = None
+        self.categories = ['dog', 'elephant', 'giraffe', 'guitar', 'horse', 'house', 'person',]
+        self.transform = transform
+        # Load data by default
+        if load_data:
+            self.load_data()
         
     def get_default_transforms(self):
-        train_transform = transforms.Compose([
-            transforms.RandomHorizontalFlip(),  # Keep this for basic augmentation
+        data_transform = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                               std=[0.229, 0.224, 0.225])
         ])
-        
-        test_transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                               std=[0.229, 0.224, 0.225])
-        ])
-        return train_transform, test_transform
+        return data_transform
     
     def load_data(self, **kwargs):
-        """Load train and test datasets"""
         if self.transform is None:
-            self.transform, test_transform = self.get_default_transforms()
-        else:
-            test_transform = self.transform
+            self.transform = self.get_default_transforms()
         
         # Initialize dataset
         fds = FederatedDataset(
@@ -304,55 +295,37 @@ class PACSDataHandler(BaseDataHandler):
             (sample['image'], sample['label'], sample['domain']) 
             for sample in partition
         ]
-        
-        # Split into train/test (80/20)
-        total_size = len(data_list)
-        train_size = int(total_size)
-
-        # Only use train data then sample for test dynamically
-        train_data = data_list[:train_size]
-        # 
-        # test_data = data_list[train_size:]
-        
+    
         # Create PyTorch datasets
-        self.train_dataset = PACSDataset(train_data, transform=self.transform)
-        # self.test_dataset = PACSDataset(test_data, transform=test_transform)
-        self.test_dataset = None
+        self.dataset = PACSDataset(data_list, transform=self.transform)
         
     def get_domain_data(self, domain: str) -> tuple:
-        """Get all data for a specific domain from both train and test sets"""
         if domain not in self.domains:
             raise ValueError(f"Domain must be one of {self.domains}")
         
-        if self.train_dataset is None or self.test_dataset is None:
-            raise ValueError("Datasets not loaded. Call load_data first.")
+        if self.dataset is None:
+            raise ValueError("Dataset not loaded. Call load_data first.")
             
         # Get indices for the specified domain in train set
-        train_indices = [
-            i for i in range(len(self.train_dataset))
-            if self.train_dataset.data[i][2] == domain  # domain is third element in tuple
+        indices = [
+            i for i in range(len(self.dataset))
+            if self.dataset.data[i][2] == domain  # domain is third element in tuple
         ]
         
-        # Get indices for the specified domain in test set
-        test_indices = [
-            i for i in range(len(self.test_dataset))
-            if self.test_dataset.data[i][2] == domain
-        ]
-        
-        return (
-            Subset(self.train_dataset, train_indices),
-            Subset(self.test_dataset, test_indices)
-        )
+        return Subset(self.dataset, indices)
     
     def get_dataset_info(self):
-        if self.train_dataset is None:
+        if self.dataset is None:
             raise ValueError("No dataset loaded")
         return {
             'name': 'PACS',
-            'train_size': len(self.train_dataset),
-            'test_size': len(self.test_dataset),
+            'dataset_size': len(self.dataset),
             'num_classes': len(self.categories),
             'input_shape': (3, 224, 224),
             'categories': self.categories,
             'domains': self.domains
         }
+
+# VLCS dataset and data handler
+
+# DomainNet dataset and data handler
