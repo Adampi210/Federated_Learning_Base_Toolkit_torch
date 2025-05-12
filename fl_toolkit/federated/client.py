@@ -179,7 +179,7 @@ class DriftAgent(FederatedClient):
             raise ValueError("Dataset is not set.")
         return len([i for i in range(len(self.current_dataset)) if self.current_dataset[i][2] == domain])
     
-    def get_test_loader(self, test_size=0.1, test_batch_size=32):
+    def get_test_loader(self, test_size=0.1):
         """Create a test loader by randomly sampling from the current dataset."""
         if self.current_dataset is None:
             raise ValueError("Dataset is not set.")
@@ -201,8 +201,8 @@ class DriftAgent(FederatedClient):
             raise ValueError("Train loader is not set. Use set_data() method to set the train loader")
         return self.model.update_steps(self.data_loader, optimizer, loss_fn, num_updates, verbose)
     
-    def evaluate(self, metric_fn, verbose=False):
-        return self.model.evaluate(self.get_test_loader(), metric_fn, verbose)
+    def evaluate(self, metric_fn, test_size=0.1, verbose=False):
+        return self.model.evaluate(self.get_test_loader(test_size), metric_fn, verbose)
 
 # Federated Learning client that utilizes compression algorithms during communication
 class FederatedCompressedClient(FederatedClient):
