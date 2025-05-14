@@ -7,10 +7,11 @@ from torchvision import transforms
 import torchvision.transforms.functional as F
 import numpy as np
 import PIL
+from PIL import Image
 from enum import Enum
 
-# PACS Drift
-class PACSDomainDrift:
+# Drift Class
+class DomainDrift:
     def __init__(self, data_handler, source_domains, target_domains, drift_rate, desired_size=None):
         self.dataset = data_handler.dataset
         self.source_domains = source_domains
@@ -65,7 +66,3 @@ class PACSDomainDrift:
             # Replace selected
             self.current_indices[selected_positions] = new_indices
             return Subset(self.dataset, self.current_indices.tolist())
-    
-# VLCS Drift
-
-# DomainNet Drift

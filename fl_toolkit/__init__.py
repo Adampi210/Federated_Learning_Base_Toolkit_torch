@@ -8,7 +8,9 @@ from .data_operations import (
     CIFAR10DataHandler,
     CIFAR100DataHandler,
     PACSDataHandler,
-    PACSDomainDrift,
+    DigitsDGDataHandler,
+    OfficeHomeDataHandler,
+    DomainDrift,
 )
 
 # Import from federated
@@ -49,9 +51,11 @@ __all__ = [
     'CIFAR10DataHandler',
     'CIFAR100DataHandler',
     'PACSDataHandler',
+    'DigitsDGDataHandler',
+    'OfficeHomeDataHandler',
     
     # Drift operations
-    'PACSDomainDrift',
+    'DomainDrift',
     
     # Federated
     'FederatedClient',

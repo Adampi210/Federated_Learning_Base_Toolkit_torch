@@ -9,6 +9,30 @@ from torch.utils.data import Dataset, DataLoader, TensorDataset, Subset
 from .data_splitter import iid_split, non_iid_split, ClientSpec
 from flwr_datasets import FederatedDataset
 from flwr_datasets.partitioner import IidPartitioner
+from PIL import Image
+
+# Custom dataset class
+class CustomDataset(Dataset):
+    """PyTorch Dataset wrapper for custom data"""
+    def __init__(self, data_list, transform=None):
+        """
+        Args:
+            data_list: List of tuples (image_path, label, domain)
+            transform: Optional transform
+        """
+        self.data = data_list  # Stores paths, labels, and domains
+        self.transform = transform
+    
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, idx):
+        path, label, domain = self.data[idx]
+        image = Image.open(path).convert('RGB')
+        if self.transform:
+            image = self.transform(image)
+        return image, label, domain
+
 
 # Works with any type of data
 class BaseDataHandler():
@@ -329,6 +353,136 @@ class PACSDataHandler(BaseDataHandler):
             'domains': self.domains
         }
 
-# VLCS dataset and data handler
+# DigitsDG data handler
+class DigitsDGDataHandler:
+    """Data handler for the DigitsDG dataset"""
+    def __init__(self, root_dir, categories=None, transform=None, load_data=True):
+        """
+        Args:
+            root_dir: Path to DigitsDG dataset root
+            categories: Optional list of digit classes (e.g., ['0', '1', '2'])
+            transform: Optional transform
+            load_data: Whether to load data immediately
+        """
+        self.root_dir = root_dir
+        self.domains = ['mnist', 'mnist_m', 'svhn', 'syn']
+        self.categories = categories if categories else [str(i) for i in range(10)]
+        self.category_to_label = {cat: int(cat) for cat in self.categories}
+        self.transform = transform if transform else self.get_default_transforms()
+        if load_data:
+            self.load_data()
+    
+    def get_default_transforms(self):
+        return transforms.Compose([
+            transforms.Resize((32, 32)),
+            transforms.ToTensor(),
+        ])
+    
+    def load_data(self):
+        data_list = []
+        for domain in self.domains:
+            domain_dir = os.path.join(self.root_dir, domain)
+            for split in ['train', 'val']:
+                split_dir = os.path.join(domain_dir, split)
+                for category in self.categories:
+                    category_dir = os.path.join(split_dir, category)
+                    if not os.path.exists(category_dir):
+                        print(f"No data for domain {category} does not exist. Skipping.")
+                        continue
+                    label = self.category_to_label[category]
+                    for img_file in os.listdir(category_dir):
+                        if img_file.endswith(('.jpg', '.png')):
+                            path = os.path.join(category_dir, img_file)
+                            data_list.append((path, label, domain))
+        self.dataset = CustomDataset(data_list, transform=self.transform)
+    
+    def get_domain_data(self, domain: str) -> Subset:
+        """Get subset of data for a specific domain"""
+        if domain not in self.domains:
+            raise ValueError(f"Domain must be one of {self.domains}")
+        if self.dataset is None:
+            raise ValueError("Dataset not loaded. Call load_data first.")
+        indices = [i for i, (_, _, d) in enumerate(self.dataset.data) if d == domain]
+        return Subset(self.dataset, indices)
+    
+    def get_dataset_info(self):
+        """Return dataset metadata"""
+        if self.dataset is None:
+            raise ValueError("No dataset loaded")
+        return {
+            'name': 'DigitsDG',
+            'dataset_size': len(self.dataset),
+            'num_classes': len(self.categories),
+            'input_shape': (3, 32, 32),
+            'categories': self.categories,
+            'domains': self.domains
+        }
 
-# DomainNet dataset and data handler
+# OfficeHome data handler
+class OfficeHomeDataHandler:
+    """Data handler for the OfficeHome dataset"""
+    def __init__(self, root_dir, categories=None, transform=None, load_data=True):
+        """
+        Args:
+            root_dir: Path to OfficeHome dataset root
+            categories: Optional list of category names to load (subset of 65)
+            transform: Optional transform
+            load_data: Whether to load data immediately
+        """
+        self.root_dir = root_dir
+        self.domains = ['Art', 'Clipart', 'Product', 'RealWorld']
+        if categories is None:
+            # Load all categories from Art domain if not specified
+            art_dir = os.path.join(root_dir, 'Art')
+            self.categories = sorted(os.listdir(art_dir))
+        else:
+            self.categories = categories
+        self.category_to_label = {cat: i for i, cat in enumerate(self.categories)}
+        self.transform = transform if transform else self.get_default_transforms()
+        if load_data:
+            self.load_data()
+    
+    def get_default_transforms(self):
+        """Default transform for OfficeHome images"""
+        return transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+        ])
+    
+    def load_data(self):
+        """Load OfficeHome data from directory structure"""
+        data_list = []
+        for domain in self.domains:
+            domain_dir = os.path.join(self.root_dir, domain)
+            for category in self.categories:
+                category_dir = os.path.join(domain_dir, category)
+                if not os.path.exists(category_dir):
+                    continue
+                label = self.category_to_label[category]
+                for img_file in os.listdir(category_dir):
+                    if img_file.endswith('.jpg'):
+                        path = os.path.join(category_dir, img_file)
+                        data_list.append((path, label, domain))
+        self.dataset = CustomDataset(data_list, transform=self.transform)
+    
+    def get_domain_data(self, domain: str) -> Subset:
+        """Get subset of data for a specific domain"""
+        if domain not in self.domains:
+            raise ValueError(f"Domain must be one of {self.domains}")
+        if self.dataset is None:
+            raise ValueError("Dataset not loaded. Call load_data first.")
+        indices = [i for i, (_, _, d) in enumerate(self.dataset.data) if d == domain]
+        return Subset(self.dataset, indices)
+    
+    def get_dataset_info(self):
+        """Return dataset metadata"""
+        if self.dataset is None:
+            raise ValueError("No dataset loaded")
+        return {
+            'name': 'OfficeHome',
+            'dataset_size': len(self.dataset),
+            'num_classes': len(self.categories),
+            'input_shape': (3, 224, 224),
+            'categories': self.categories,
+            'domains': self.domains
+        }
