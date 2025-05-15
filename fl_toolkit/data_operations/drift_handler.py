@@ -9,6 +9,7 @@ import numpy as np
 import PIL
 from PIL import Image
 from enum import Enum
+import time
 
 # Drift Class
 class DomainDrift:
@@ -18,7 +19,7 @@ class DomainDrift:
         self.target_domains = target_domains
         self.drift_rate = drift_rate
         self.desired_size = desired_size
-        self.domain_array = np.array([domain for _, _, domain in self.dataset])
+        self.domain_array = np.array([item[2] for item in self.dataset.data])
         self.domain_to_indices = {d: np.where(self.domain_array == d)[0] for d in set(self.domain_array)}
         self.set_target_domains(target_domains)
         self.current_indices = None

@@ -33,7 +33,19 @@ class CustomDataset(Dataset):
             image = self.transform(image)
         return image, label, domain
 
-
+    def get_domains(self):
+        """Return unique domains in the dataset"""
+        return set([item[2] for item in self.data])
+    
+    def get_metadata(self, idx=None):
+        """Return metadata (path, label, domain) without loading images."""
+        if idx is None:
+            return self.data
+        return self.data[idx]
+    
+    def set_subset(self, indices):
+        self.data = [self.data[i] for i in indices]
+    
 # Works with any type of data
 class BaseDataHandler():
     def __init__(self, transform=None):
@@ -285,6 +297,14 @@ class PACSDataset(Dataset):
             
         return image, label, domain
 
+    def get_metadata(self, idx=None):
+        if idx is None:
+            return self.data
+        return self.data[idx]
+    
+    def set_subset(self, indices):
+        self.data = [self.data[i] for i in indices]
+    
 class PACSDataHandler(BaseDataHandler):
     def __init__(self, transform=None, load_data=True):
         super().__init__(transform)
@@ -303,6 +323,11 @@ class PACSDataHandler(BaseDataHandler):
             transforms.ToTensor(),
         ])
         return data_transform
+    
+    def set_subset(self, indices):
+        if self.dataset is None:
+            raise ValueError("Dataset not loaded. Call load_data first.")
+        self.dataset.set_subset(indices)
     
     def load_data(self, **kwargs):
         if self.transform is None:
@@ -378,6 +403,11 @@ class DigitsDGDataHandler:
             transforms.ToTensor(),
         ])
     
+    def set_subset(self, indices):
+        if self.dataset is None:
+            raise ValueError("Dataset not loaded. Call load_data first.")
+        self.dataset.set_subset(indices)
+    
     def load_data(self):
         data_list = []
         for domain in self.domains:
@@ -448,6 +478,11 @@ class OfficeHomeDataHandler:
             transforms.Resize((224, 224)),
             transforms.ToTensor(),
         ])
+    
+    def set_subset(self, indices):
+        if self.dataset is None:
+            raise ValueError("Dataset not loaded. Call load_data first.")
+        self.dataset.set_subset(indices)
     
     def load_data(self):
         """Load OfficeHome data from directory structure"""
