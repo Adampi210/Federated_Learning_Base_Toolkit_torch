@@ -148,14 +148,14 @@ class DriftAgent(FederatedClient):
             self.current_dataset = self.domain_drift.apply()
         else:
             raise ValueError("Domain drift is not set")
-        self.data_loader = DataLoader(self.current_dataset, batch_size=self.batch_size, shuffle=True)
+        self.data_loader = DataLoader(self.current_dataset, batch_size=self.batch_size, shuffle=True, num_workers=14, pin_memory=True)
     
     def apply_drift(self):
         """Apply drift to the dataset"""
         """NOTE: This is equivalent to set_data(), but is created for clarity in training"""
         if self.domain_drift is not None:
             self.current_dataset = self.domain_drift.apply()
-            self.data_loader = DataLoader(self.current_dataset, batch_size=self.batch_size, shuffle=True)
+            self.data_loader = DataLoader(self.current_dataset, batch_size=self.batch_size, shuffle=True, num_workers=14, pin_memory=True)
         else:
             raise ValueError("Domain drift is not set")
         
@@ -189,7 +189,7 @@ class DriftAgent(FederatedClient):
         test_indices = random.sample(indices, test_samples)
         test_subset = Subset(self.current_dataset, test_indices)
         self.test_subset = test_subset
-        return DataLoader(test_subset, batch_size=self.batch_size, shuffle=False)
+        return DataLoader(test_subset, batch_size=self.batch_size, shuffle=False, num_workers=14, pin_memory=True)
 
     def train(self, epochs, optimizer, loss_fn, verbose=False):
         if self.train_loader is None:
