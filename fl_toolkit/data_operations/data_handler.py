@@ -1,15 +1,19 @@
 # data_operations/data_handler.py
 
 import os
+import json
 import torch
 import torchvision
 import torchvision.transforms as transforms
 import numpy as np
+from transformers import DistilBertTokenizer
 from torch.utils.data import Dataset, DataLoader, TensorDataset, Subset
 from .data_splitter import iid_split, non_iid_split, ClientSpec
 from flwr_datasets import FederatedDataset
 from flwr_datasets.partitioner import IidPartitioner
 from PIL import Image
+from transformers import DistilBertTokenizer
+from datasets import load_dataset
 
 # Custom dataset class
 class CustomDataset(Dataset):
@@ -519,5 +523,198 @@ class OfficeHomeDataHandler:
             'num_classes': len(self.categories),
             'input_shape': (3, 224, 224),
             'categories': self.categories,
+            'domains': self.domains
+        }
+        
+# DomainNet data handler
+class DomainNetDataHandler:
+    """Data handler for the DomainNet dataset (subset: real, clipart, painting, sketch)"""
+    def __init__(self, root_dir, categories=None, transform=None, load_data=True):
+        """
+        Args:
+            root_dir: Path to DomainNet dataset root
+            categories: Optional list of category names to load (subset of 345); defaults to all
+            transform: Optional transform
+            load_data: Whether to load data immediately
+        """
+        self.root_dir = root_dir
+        self.domains = ['real', 'clipart', 'painting', 'sketch']  # Subset as specified
+        if categories is None:
+            # Load all categories from 'real' domain if not specified
+            real_dir = os.path.join(root_dir, 'real')
+            self.categories = sorted(os.listdir(real_dir))
+        else:
+            self.categories = categories
+        self.category_to_label = {cat: i for i, cat in enumerate(self.categories)}
+        self.transform = transform if transform else self.get_default_transforms()
+        if load_data:
+            self.load_data()
+    
+    def get_default_transforms(self):
+        """Default transform for DomainNet images (similar to OfficeHome)"""
+        return transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+        ])
+    
+    def set_subset(self, indices):
+        if self.dataset is None:
+            raise ValueError("Dataset not loaded. Call load_data first.")
+        self.dataset.set_subset(indices)
+    
+    def load_data(self):
+        """Load DomainNet data from directory structure"""
+        data_list = []
+        for domain in self.domains:
+            domain_dir = os.path.join(self.root_dir, domain)
+            for category in self.categories:
+                category_dir = os.path.join(domain_dir, category)
+                if not os.path.exists(category_dir):
+                    continue
+                label = self.category_to_label[category]
+                for img_file in os.listdir(category_dir):
+                    if img_file.lower().endswith(('.jpg', '.png', '.jpeg')):  # Handle multiple extensions
+                        path = os.path.join(category_dir, img_file)
+                        data_list.append((path, label, domain))
+        self.dataset = CustomDataset(data_list, transform=self.transform)
+    
+    def get_domain_data(self, domain: str) -> Subset:
+        """Get subset of data for a specific domain"""
+        if domain not in self.domains:
+            raise ValueError(f"Domain must be one of {self.domains}")
+        if self.dataset is None:
+            raise ValueError("Dataset not loaded. Call load_data first.")
+        indices = [i for i, (_, _, d) in enumerate(self.dataset.data) if d == domain]
+        return Subset(self.dataset, indices)
+    
+    def get_dataset_info(self):
+        """Return dataset metadata"""
+        if self.dataset is None:
+            raise ValueError("No dataset loaded")
+        return {
+            'name': 'DomainNet',
+            'dataset_size': len(self.dataset),
+            'num_classes': len(self.categories),  # 345 by default
+            'input_shape': (3, 224, 224),
+            'categories': self.categories,
+            'domains': self.domains
+        }
+
+# MEMD-ABSA dataset
+class MEMDABSADataset(Dataset):
+    """PyTorch Dataset wrapper for MEMD-ABSA data"""
+    def __init__(self, data_list, tokenizer, max_length=128):
+        """
+        Args:
+            data_list: List of tuples (sentence, quadruples, domain)
+            tokenizer: DistilBERT tokenizer
+            max_length: Max token length for encoding
+        """
+        self.data = data_list  # List of (sentence, quadruples, domain)
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+    
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, idx):
+        sentence, quadruples, domain = self.data[idx]
+        # Tokenize sentence
+        encoding = self.tokenizer(
+            sentence,
+            max_length=self.max_length,
+            padding='max_length',
+            truncation=True,
+            return_tensors='pt'
+        )
+        # Extract input_ids and attention_mask
+        input_ids = encoding['input_ids'].squeeze(0)  # Remove batch dim
+        attention_mask = encoding['attention_mask'].squeeze(0)
+        # Convert quadruples to tensor format
+        # For simplicity, assume we predict sentiment polarity (POS=0, NEG=1, NEU=2) for each quadruple
+        # You can adjust this for full ACOS extraction (e.g., span indices)
+        if quadruples:
+            sentiments = [q['sentiment'] for q in quadruples]
+            sentiment_map = {'POS': 0, 'NEG': 1, 'NEU': 2}
+            labels = torch.tensor([sentiment_map[s] for s in sentiments], dtype=torch.long)
+        else:
+            labels = torch.tensor([], dtype=torch.long)  # Empty for no quadruples
+        return {
+            'input_ids': input_ids,
+            'attention_mask': attention_mask,
+            'labels': labels,
+            'domain': domain
+        }
+
+    def get_metadata(self, idx=None):
+        if idx is None:
+            return self.data
+        return self.data[idx]
+    
+    def set_subset(self, indices):
+        self.data = [self.data[i] for i in indices]
+
+# MEMD-ABSA data handler
+class MEMDABSADataHandler:
+    """Data handler for the MEMD-ABSA dataset"""
+    def __init__(self, root_dir, domains=None, transform=None, load_data=True):
+        """
+        Args:
+            root_dir: Path to MEMD-ABSA dataset root
+            domains: Optional list of domains to load (subset of ['Book', 'Clothing', 'Hotel', 'Restaurant', 'Laptop'])
+            transform: Optional tokenizer (defaults to DistilBERT)
+            load_data: Whether to load data immediately
+        """
+        self.root_dir = root_dir
+        self.domains = domains if domains else ['Books', 'Clothing', 'Hotel', 'Restaurant', 'Laptop']
+        self.tokenizer = transform if transform else self.get_default_transforms()
+        if load_data:
+            self.load_data()
+    
+    def get_default_transforms(self):
+        """Default tokenizer for MEMD-ABSA"""
+        return DistilBertTokenizer.from_pretrained('distilbert-base-uncased')
+    
+    def set_subset(self, indices):
+        if self.dataset is None:
+            raise ValueError("Dataset not loaded. Call load_data first.")
+        self.dataset.set_subset(indices)
+    
+    def load_data(self):
+        """Load MEMD-ABSA data from JSON files"""
+        data_list = []
+        for domain in self.domains:
+            # Load Train.json and Test.json (Dev.json optional for validation)
+            for split in ['Train', 'Test']:
+                json_path = os.path.join(self.root_dir, domain, f'{split}.json')
+                if not os.path.exists(json_path):
+                    print(f"No data for {domain}/{split}.json. Skipping.")
+                    continue
+                with open(json_path, 'r') as f:
+                    data = json.load(f)
+                for item in data:
+                    sentence = item['raw_words']
+                    quadruples = item['quadruples']
+                    data_list.append((sentence, quadruples, domain))
+        self.dataset = MEMDABSADataset(data_list, tokenizer=self.tokenizer)
+    
+    def get_domain_data(self, domain: str) -> Subset:
+        """Get subset of data for a specific domain"""
+        if domain not in self.domains:
+            raise ValueError(f"Domain must be one of {self.domains}")
+        if self.dataset is None:
+            raise ValueError("Dataset not loaded. Call load_data first.")
+        indices = [i for i, (_, _, d) in enumerate(self.dataset.data) if d == domain]
+        return Subset(self.dataset, indices)
+    
+    def get_dataset_info(self):
+        """Return dataset metadata"""
+        if self.dataset is None:
+            raise ValueError("No dataset loaded")
+        return {
+            'name': 'MEMD-ABSA',
+            'dataset_size': len(self.dataset),
+            'num_classes': 3,  # Sentiment classes: POS, NEG, NEU
+            'input_shape': (self.tokenizer.model_max_length,),  # Tokenized input length
             'domains': self.domains
         }

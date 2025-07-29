@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 import os
+import numpy as np
 
 ############ BASE MODEL ARCHITECTURE CLASS ############
 # A class to inherit from for raw neural network architectures
@@ -43,9 +44,18 @@ class BaseNeuralNetwork():
                     inputs, targets, _ = batch  # Ignore rest
                 else:
                     inputs, targets = batch
-                inputs, targets = inputs.to(self.device), targets.to(self.device)
+                # Handle dictionary inputs for transformers
+                if isinstance(inputs, dict):
+                    inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                else:
+                    inputs = inputs.to(self.device)
+                targets = targets.to(self.device)
                 optimizer.zero_grad()
-                outputs = self.model(inputs)
+                # Use dictionary unpacking for model call
+                if isinstance(inputs, dict):
+                    outputs = self.model(**inputs)
+                else:
+                    outputs = self.model(inputs)
                 loss = loss_fn(outputs, targets)
                 loss.backward()
                 optimizer.step()
@@ -70,9 +80,18 @@ class BaseNeuralNetwork():
                 inputs, targets, _ = batch
             else:
                 inputs, targets = batch
-            inputs, targets = inputs.to(self.device), targets.to(self.device)
+            # Handle dictionary inputs for transformers
+            if isinstance(inputs, dict):
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            else:
+                inputs = inputs.to(self.device)
+            targets = targets.to(self.device)
             optimizer.zero_grad()
-            outputs = self.model(inputs)
+            # Use dictionary unpacking for model call
+            if isinstance(inputs, dict):
+                outputs = self.model(**inputs)
+            else:
+                outputs = self.model(inputs)
             loss = loss_fn(outputs, targets)
             loss.backward()
             optimizer.step()
@@ -91,13 +110,54 @@ class BaseNeuralNetwork():
                     inputs, targets, _ = batch  # Ignore rest
                 else:
                     inputs, targets = batch
-                inputs, targets = inputs.to(self.device), targets.to(self.device)
-                outputs = self.model(inputs)
+                # Handle dictionary inputs for transformers
+                if isinstance(inputs, dict):
+                    inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                else:
+                    inputs = inputs.to(self.device)
+                targets = targets.to(self.device)
+                # Use dictionary unpacking for model call
+                if isinstance(inputs, dict):
+                    outputs = self.model(**inputs)
+                else:
+                    outputs = self.model(inputs)
                 total_metric += metric_fn(outputs, targets).item()
         avg_metric = total_metric / len(data_loader)
         if verbose:
             print(f"Evaluation metric: {avg_metric:.4f}")
         return avg_metric
+    
+    def evaluate_outputs(self, data_loader, metric_fn, verbose=False):
+        self.model.eval()
+        all_outputs = []
+        all_targets = []
+        total_metric = 0
+        with torch.no_grad():
+            for batch in data_loader:
+                if len(batch) > 2:
+                    inputs, targets, _ = batch  # Ignore rest
+                else:
+                    inputs, targets = batch
+                # Handle dictionary inputs for transformers
+                if isinstance(inputs, dict):
+                    inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                else:
+                    inputs = inputs.to(self.device)
+                targets = targets.to(self.device)
+                # Use dictionary unpacking for model call
+                if isinstance(inputs, dict):
+                    outputs = self.model(**inputs)
+                else:
+                    outputs = self.model(inputs)
+                all_outputs.append(outputs.cpu().numpy())
+                all_targets.append(targets.cpu().numpy())
+                total_metric += metric_fn(outputs, targets).item()
+        avg_metric = total_metric / len(data_loader)
+        if verbose:
+            print(f"Evaluation metric: {avg_metric:.4f}")
+        all_outputs = np.concatenate(all_outputs, axis=0)
+        all_targets = np.concatenate(all_targets, axis=0)
+        return avg_metric, (all_outputs, all_targets)
     
     def get_params(self):
         return self.model.state_dict()

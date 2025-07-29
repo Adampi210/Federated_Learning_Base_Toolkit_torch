@@ -203,6 +203,8 @@ class DriftAgent(FederatedClient):
     
     def evaluate(self, metric_fn, test_size=0.1, verbose=False):
         return self.model.evaluate(self.get_test_loader(test_size), metric_fn, verbose)
+    def evaluate_outputs(self, metric_fn, test_size=0.1, verbose=False):
+        return self.model.evaluate_outputs(self.get_test_loader(test_size), metric_fn, verbose)
 
 # Federated Learning client that utilizes compression algorithms during communication
 class FederatedCompressedClient(FederatedClient):

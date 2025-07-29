@@ -11,6 +11,8 @@ from .data_operations import (
     DigitsDGDataHandler,
     OfficeHomeDataHandler,
     DomainDrift,
+    DomainNetDataHandler, 
+    MEMDABSADataHandler
 )
 
 # Import from federated
@@ -53,7 +55,9 @@ __all__ = [
     'PACSDataHandler',
     'DigitsDGDataHandler',
     'OfficeHomeDataHandler',
-    
+    'DomainNetDataHandler',
+    'MEMDABSADataHandler',
+
     # Drift operations
     'DomainDrift',
     
